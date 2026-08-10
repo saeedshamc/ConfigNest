@@ -123,9 +123,8 @@ class SourceRepository(private val context: Context) {
     }
 
     suspend fun saveCachedConfigs(configs: List<ConfigItem>, timestamp: Long) {
-        configDao.clearAll()
         val entities = configs.map { com.example.data.db.CachedConfigEntity.fromModel(it, timestamp) }
-        configDao.insertAll(entities)
+        configDao.replaceAll(entities)
         context.dataStore.edit { prefs ->
             prefs[LAST_UPDATED_KEY] = timestamp
         }

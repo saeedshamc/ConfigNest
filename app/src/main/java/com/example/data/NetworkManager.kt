@@ -114,15 +114,15 @@ object NetworkManager {
             }
         } catch (e: UnknownHostException) {
             val err = "DNS resolution failed (Unknown Host) for URL '${source.url}': ${e.message}"
-            Log.e(TAG, "[DNS FAILURE] Source='${source.name}' URL='${source.url}' - ${e.message}")
+            Log.w(TAG, "[DNS FAILURE] Source='${source.name}' URL='${source.url}' - ${e.message}")
             NetworkFetchResult(source, isSuccess = false, errorMessage = err)
         } catch (e: SocketTimeoutException) {
             val err = "Connection/Read timeout for URL '${source.url}': ${e.message}"
-            Log.e(TAG, "[TIMEOUT FAILURE] Source='${source.name}' URL='${source.url}' - ${e.message}")
+            Log.w(TAG, "[TIMEOUT FAILURE] Source='${source.name}' URL='${source.url}' - ${e.message}")
             NetworkFetchResult(source, isSuccess = false, errorMessage = err)
         } catch (e: IOException) {
             val err = "Network I/O error for URL '${source.url}': ${e.javaClass.simpleName} - ${e.message}"
-            Log.e(TAG, "[I/O FAILURE] Source='${source.name}' URL='${source.url}' - ${e.message}")
+            Log.w(TAG, "[I/O FAILURE] Source='${source.name}' URL='${source.url}' - ${e.message}")
             NetworkFetchResult(source, isSuccess = false, errorMessage = err)
         } catch (e: Exception) {
             val err = "Unexpected error fetching URL '${source.url}': ${e.javaClass.simpleName} - ${e.message}"

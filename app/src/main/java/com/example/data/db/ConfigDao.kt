@@ -19,4 +19,12 @@ interface ConfigDao {
 
     @Query("DELETE FROM cached_configs")
     suspend fun clearAll()
+
+    @androidx.room.Transaction
+    suspend fun replaceAll(configs: List<CachedConfigEntity>) {
+        clearAll()
+        if (configs.isNotEmpty()) {
+            insertAll(configs)
+        }
+    }
 }
