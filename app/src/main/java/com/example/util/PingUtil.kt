@@ -75,20 +75,30 @@ object PingUtil {
 
     private fun parseUriBased(raw: String): ServerTarget? {
         val cleanUrl = raw.substringBefore("#").trim()
-        return try {
-            val uri = Uri.parse(cleanUrl)
-            val host = uri.host?.trim()?.trim('[', ']')
-            val port = uri.port
-
-            if (!host.isNullOrBlank()) {
-                val validPort = if (port in 1..65535) port else 443
-                ServerTarget(host, validPort)
+        val withoutScheme = cleanUrl.substringAfter("://").trim()
+        val authority = withoutScheme.substringBefore("?").substringBefore("/").trim()
+        val hostPortPart = if (authority.contains("@")) authority.substringAfter("@") else authority
+        if (hostPortPart.isNotBlank()) {
+            val host: String
+            val port: Int
+            if (hostPortPart.startsWith("[")) {
+                host = hostPortPart.substringBefore("]").substringAfter("[").trim()
+                val afterBracket = hostPortPart.substringAfter("]", "")
+                val portStr = if (afterBracket.startsWith(":")) afterBracket.substringAfter(":") else ""
+                port = portStr.toIntOrNull() ?: 443
+            } else if (hostPortPart.contains(":")) {
+                host = hostPortPart.substringBefore(":").trim()
+                port = hostPortPart.substringAfter(":").trim().toIntOrNull() ?: 443
             } else {
-                parseGenericFallback(raw)
+                host = hostPortPart.trim()
+                port = 443
             }
-        } catch (_: Exception) {
-            parseGenericFallback(raw)
+            if (host.isNotBlank()) {
+                val validPort = if (port in 1..65535) port else 443
+                return ServerTarget(host, validPort)
+            }
         }
+        return parseGenericFallback(raw)
     }
 
     private fun parseShadowsocks(raw: String): ServerTarget? {
