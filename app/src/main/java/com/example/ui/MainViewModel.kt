@@ -49,6 +49,9 @@ class MainViewModel(
     val isFetching = MutableStateFlow(false)
     val fetchStatusMessage = MutableStateFlow<String?>(null)
 
+    val configLatencies = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val isPinging = MutableStateFlow(false)
+
     // Snackbar event channel
     private val _snackbarEvent = MutableSharedFlow<String>()
     val snackbarEvent: SharedFlow<String> = _snackbarEvent
@@ -174,6 +177,57 @@ class MainViewModel(
         }
     }
 
+    fun pingSingleConfig(item: ConfigItem) {
+        viewModelScope.launch {
+            configLatencies.value = configLatencies.value + (item.id to -2L)
+            val target = com.example.util.PingUtil.extractServerTarget(item.rawConfig, item.protocol)
+            val result = if (target != null) {
+                com.example.util.PingUtil.pingServer(target)
+            } else {
+                -1L
+            }
+            configLatencies.value = configLatencies.value + (item.id to result)
+        }
+    }
+
+    fun pingFilteredConfigs() {
+        if (isPinging.value) return
+        val currentList = filteredConfigs.value
+        if (currentList.isEmpty()) return
+
+        viewModelScope.launch {
+            isPinging.value = true
+            val updatedMap = configLatencies.value.toMutableMap()
+            currentList.forEach { updatedMap[it.id] = -2L }
+            configLatencies.value = updatedMap
+
+            kotlinx.coroutines.coroutineScope {
+                val dispatcher = kotlinx.coroutines.Dispatchers.IO
+                val semaphore = kotlinx.coroutines.sync.Semaphore(12)
+
+                currentList.map { item ->
+                    launch(dispatcher) {
+                        semaphore.acquire()
+                        try {
+                            val target = com.example.util.PingUtil.extractServerTarget(item.rawConfig, item.protocol)
+                            val latency = if (target != null) {
+                                com.example.util.PingUtil.pingServer(target)
+                            } else {
+                                -1L
+                            }
+                            configLatencies.value = configLatencies.value + (item.id to latency)
+                        } finally {
+                            semaphore.release()
+                        }
+                    }
+                }
+            }
+
+            isPinging.value = false
+            _snackbarEvent.emit("Ping test completed for ${currentList.size} servers!")
+        }
+    }
+
     fun copySingleConfig(context: Context, item: ConfigItem) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("V2Ray Config", item.rawConfig)
@@ -195,7 +249,24 @@ class MainViewModel(
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("V2Ray Config List", combined)
         clipboard.setPrimaryClip(clip)
-        val successMessage = "Successfully copied ${currentList.size} configs to clipboard!"
+        val successMessage = "Successfully copied ${currentList.size} configs from current tab!"
+        Toast.makeText(context, successMessage, Toast.LENGTH_LONG).show()
+        viewModelScope.launch {
+            _snackbarEvent.emit(successMessage)
+        }
+    }
+
+    fun copyAllConfigs(context: Context) {
+        val currentList = allConfigs.value
+        if (currentList.isEmpty()) {
+            Toast.makeText(context, "No configs to copy", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val combined = currentList.joinToString("\n") { it.rawConfig }
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("All V2Ray Configs", combined)
+        clipboard.setPrimaryClip(clip)
+        val successMessage = "Successfully copied ALL ${currentList.size} configs!"
         Toast.makeText(context, successMessage, Toast.LENGTH_LONG).show()
         viewModelScope.launch {
             _snackbarEvent.emit(successMessage)

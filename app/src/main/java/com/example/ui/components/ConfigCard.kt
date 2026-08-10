@@ -21,10 +21,12 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,7 +58,9 @@ import com.example.util.QrCodeUtil
 fun ConfigCard(
     item: ConfigItem,
     onCopy: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    latency: Long? = null,
+    onPing: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var showQrDialog by remember { mutableStateOf(false) }
@@ -134,6 +138,15 @@ fun ConfigCard(
 
                 // Protocol Badge
                 ProtocolBadge(protocol = item.protocol)
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Latency Ping Badge
+                LatencyBadge(
+                    latency = latency,
+                    onPing = onPing,
+                    configId = item.id
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -352,5 +365,86 @@ fun ProtocolBadge(protocol: ProtocolType) {
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
         )
+    }
+}
+
+@Composable
+fun LatencyBadge(
+    latency: Long?,
+    onPing: (() -> Unit)?,
+    configId: String
+) {
+    val bgColor = when (latency) {
+        null -> MaterialTheme.colorScheme.surfaceVariant
+        -2L -> MaterialTheme.colorScheme.surfaceVariant
+        -1L -> MaterialTheme.colorScheme.errorContainer
+        else -> when {
+            latency < 200 -> Color(0xFF2E7D32)
+            latency < 500 -> Color(0xFFF57F17)
+            else -> Color(0xFFC62828)
+        }
+    }
+
+    Surface(
+        color = bgColor,
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier
+            .clickable(enabled = onPing != null && latency != -2L) { onPing?.invoke() }
+            .testTag("ping_badge_$configId")
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+            when (latency) {
+                null -> {
+                    Icon(
+                        imageVector = Icons.Default.Speed,
+                        contentDescription = "Test Ping",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = "Ping",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 10.sp
+                    )
+                }
+                -2L -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(10.dp),
+                        strokeWidth = 1.5.dp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Testing...",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp
+                    )
+                }
+                -1L -> {
+                    Text(
+                        text = "Timeout",
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp
+                    )
+                }
+                else -> {
+                    Text(
+                        text = "${latency} ms",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+        }
     }
 }

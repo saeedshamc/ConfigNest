@@ -20,16 +20,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CopyAll
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -81,6 +88,11 @@ fun MainScreen(
     val selectedSourceType by viewModel.selectedSourceType.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
 
+    val configLatencies by viewModel.configLatencies.collectAsState()
+    val isPinging by viewModel.isPinging.collectAsState()
+
+    var showMenu by remember { mutableStateOf(false) }
+
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -96,7 +108,7 @@ fun MainScreen(
                 title = {
                     Column {
                         Text(
-                            text = "Config Fetcher",
+                            text = "V2Ray Hub",
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                         )
                         Text(
@@ -107,6 +119,24 @@ fun MainScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { viewModel.pingFilteredConfigs() },
+                        enabled = !isPinging && filteredConfigs.isNotEmpty(),
+                        modifier = Modifier.testTag("ping_all_button")
+                    ) {
+                        if (isPinging) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Speed,
+                                contentDescription = "Test Ping Latency"
+                            )
+                        }
+                    }
+
                     IconButton(
                         onClick = { viewModel.refreshConfigs() },
                         enabled = !isFetching,
@@ -126,25 +156,66 @@ fun MainScreen(
                     }
 
                     IconButton(
-                        onClick = {
-                            viewModel.copyFilteredConfigs(context)
-                        },
-                        modifier = Modifier.testTag("copy_all_button")
+                        onClick = { viewModel.copyFilteredConfigs(context) },
+                        modifier = Modifier.testTag("copy_tab_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy All Configs"
+                            contentDescription = "Copy Current Tab Configs"
                         )
                     }
 
-                    IconButton(
-                        onClick = { viewModel.shareFilteredConfigs(context) },
-                        modifier = Modifier.testTag("share_all_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = "Share All Configs"
-                        )
+                    Box {
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.testTag("more_menu_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More Options"
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Copy Current Tab (${filteredConfigs.size})") },
+                                onClick = {
+                                    viewModel.copyFilteredConfigs(context)
+                                    showMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Copy ALL Configs (${allConfigs.size})") },
+                                onClick = {
+                                    viewModel.copyAllConfigs(context)
+                                    showMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.CopyAll, contentDescription = null) }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Ping Test Current Tab (${filteredConfigs.size})") },
+                                onClick = {
+                                    viewModel.pingFilteredConfigs()
+                                    showMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.Speed, contentDescription = null) }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Share Current Tab") },
+                                onClick = {
+                                    viewModel.shareFilteredConfigs(context)
+                                    showMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -277,6 +348,7 @@ fun MainScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
                             .padding(32.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -325,7 +397,9 @@ fun MainScreen(
                         ) { item ->
                             ConfigCard(
                                 item = item,
-                                onCopy = { viewModel.copySingleConfig(context, item) }
+                                onCopy = { viewModel.copySingleConfig(context, item) },
+                                latency = configLatencies[item.id],
+                                onPing = { viewModel.pingSingleConfig(item) }
                             )
                         }
                     }
