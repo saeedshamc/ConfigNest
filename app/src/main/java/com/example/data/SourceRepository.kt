@@ -29,6 +29,8 @@ class SourceRepository(private val context: Context) {
     private val LAST_UPDATED_KEY = longPreferencesKey("last_updated_time")
     private val THEME_KEY = stringPreferencesKey("app_theme_mode")
 
+    private val configDao = com.example.data.db.AppDatabase.getDatabase(context).configDao()
+
     val sourcesFlow: Flow<List<ConfigSource>> = context.dataStore.data.map { prefs ->
         val raw = prefs[SOURCES_KEY]
         if (raw.isNullOrBlank()) {
@@ -38,11 +40,12 @@ class SourceRepository(private val context: Context) {
         }
     }
 
-    val cachedConfigsFlow: Flow<Pair<List<ConfigItem>, Long>> = context.dataStore.data.map { prefs ->
-        val raw = prefs[CACHED_CONFIGS_KEY] ?: ""
+    val cachedConfigsFlow: Flow<Pair<List<ConfigItem>, Long>> = kotlinx.coroutines.flow.combine(
+        configDao.getAllConfigsFlow(),
+        context.dataStore.data
+    ) { entities, prefs ->
         val time = prefs[LAST_UPDATED_KEY] ?: 0L
-        val list = if (raw.isNotBlank()) deserializeConfigs(raw) else emptyList()
-        Pair(list, time)
+        Pair(entities.map { it.toModel() }, time)
     }
 
     val themeModeFlow: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
@@ -62,9 +65,10 @@ class SourceRepository(private val context: Context) {
     }
 
     suspend fun saveCachedConfigs(configs: List<ConfigItem>, timestamp: Long) {
-        val json = serializeConfigs(configs)
+        configDao.clearAll()
+        val entities = configs.map { com.example.data.db.CachedConfigEntity.fromModel(it, timestamp) }
+        configDao.insertAll(entities)
         context.dataStore.edit { prefs ->
-            prefs[CACHED_CONFIGS_KEY] = json
             prefs[LAST_UPDATED_KEY] = timestamp
         }
     }

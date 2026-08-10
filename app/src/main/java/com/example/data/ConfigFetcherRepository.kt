@@ -23,11 +23,15 @@ data class FetchResult(
 
 class ConfigFetcherRepository {
 
+    companion object {
+        private const val MAX_BODY_SIZE = 5 * 1024 * 1024L // 5MB limit to prevent OOM
+    }
+
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
             .addInterceptor { chain ->
@@ -126,7 +130,7 @@ class ConfigFetcherRepository {
                     android.util.Log.w("ConfigFetcher", "HTTP ${response.code} ${response.message} for source '${source.name}' (${source.url})")
                     return null
                 }
-                val bodyText = response.body?.string()
+                val bodyText = readResponseBodySafely(response, source.name)
                 if (bodyText.isNullOrBlank()) {
                     android.util.Log.w("ConfigFetcher", "Received empty response body for source '${source.name}' (${source.url})")
                     return null
@@ -142,6 +146,28 @@ class ConfigFetcherRepository {
             }
         } catch (e: Exception) {
             android.util.Log.e("ConfigFetcher", "Failed fetching source '${source.name}' (${source.url}): ${e.javaClass.simpleName} - ${e.message}", e)
+            null
+        }
+    }
+
+    private fun readResponseBodySafely(response: okhttp3.Response, sourceName: String): String? {
+        val responseBody = response.body ?: return null
+        val contentLength = responseBody.contentLength()
+        if (contentLength > MAX_BODY_SIZE) {
+            android.util.Log.w("ConfigFetcher", "Content-Length ($contentLength bytes) exceeds 5MB limit for '$sourceName'")
+            return null
+        }
+
+        return try {
+            val source = responseBody.source()
+            source.request(MAX_BODY_SIZE + 1)
+            if (source.buffer.size > MAX_BODY_SIZE) {
+                android.util.Log.w("ConfigFetcher", "Response body exceeds 5MB limit for '$sourceName'")
+                return null
+            }
+            responseBody.string()
+        } catch (e: Exception) {
+            android.util.Log.e("ConfigFetcher", "Error reading response body for '$sourceName': ${e.message}")
             null
         }
     }
