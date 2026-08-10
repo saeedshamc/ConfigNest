@@ -1,5 +1,6 @@
 package com.example.util
 
+import android.net.Uri
 import android.util.Base64
 import com.example.model.ProtocolType
 import kotlinx.coroutines.Dispatchers
@@ -23,8 +24,11 @@ object PingUtil {
                 trimmed.startsWith("vless://", ignoreCase = true) -> parseUriBased(trimmed)
                 trimmed.startsWith("trojan://", ignoreCase = true) -> parseUriBased(trimmed)
                 trimmed.startsWith("tuic://", ignoreCase = true) -> parseUriBased(trimmed)
-                trimmed.startsWith("hy2://", ignoreCase = true) || trimmed.startsWith("hysteria2://", ignoreCase = true) -> parseUriBased(trimmed)
+                trimmed.startsWith("hy2://", ignoreCase = true) ||
+                trimmed.startsWith("hysteria2://", ignoreCase = true) ||
+                trimmed.startsWith("hysteria://", ignoreCase = true) -> parseUriBased(trimmed)
                 trimmed.startsWith("ss://", ignoreCase = true) -> parseShadowsocks(trimmed)
+                trimmed.startsWith("ssr://", ignoreCase = true) -> parseShadowsocksR(trimmed)
                 else -> parseGenericFallback(trimmed)
             }
         } catch (_: Exception) {
@@ -32,89 +36,140 @@ object PingUtil {
         }
     }
 
-    private fun parseVmess(raw: String): ServerTarget? {
-        val base64Part = raw.substringAfter("vmess://").trim()
-        val jsonStr = try {
-            String(Base64.decode(base64Part, Base64.DEFAULT or Base64.NO_WRAP or Base64.URL_SAFE), StandardCharsets.UTF_8)
+    private fun decodeBase64Safe(input: String): String {
+        val clean = input.trim().replace("\n", "").replace("\r", "").replace(" ", "")
+        if (clean.isBlank()) return ""
+        val padded = when (clean.length % 4) {
+            2 -> "$clean=="
+            3 -> "$clean="
+            else -> clean
+        }
+        return try {
+            String(Base64.decode(padded, Base64.DEFAULT or Base64.NO_WRAP or Base64.URL_SAFE), StandardCharsets.UTF_8)
         } catch (_: Exception) {
-            return parseGenericFallback(raw)
+            ""
         }
+    }
 
-        val json = JSONObject(jsonStr)
-        val host = json.optString("add").ifBlank { json.optString("host") }
-        val portObj = json.opt("port")
-        val port = when (portObj) {
-            is Int -> portObj
-            is String -> portObj.toIntOrNull() ?: 443
-            else -> 443
+    private fun parseVmess(raw: String): ServerTarget? {
+        val body = raw.substringAfter("vmess://").substringBefore("#").trim()
+        val jsonStr = decodeBase64Safe(body)
+        if (jsonStr.isBlank()) return parseGenericFallback(raw)
+
+        return try {
+            val json = JSONObject(jsonStr)
+            val host = json.optString("add").ifBlank { json.optString("host") }.trim().trim('[', ']')
+            val portObj = json.opt("port")
+            val port = when (portObj) {
+                is Int -> portObj
+                is Number -> portObj.toInt()
+                is String -> portObj.toIntOrNull() ?: 443
+                else -> 443
+            }
+
+            if (host.isNotBlank()) ServerTarget(host, if (port in 1..65535) port else 443) else parseGenericFallback(raw)
+        } catch (_: Exception) {
+            parseGenericFallback(raw)
         }
-
-        return if (host.isNotBlank()) ServerTarget(host, port) else null
     }
 
     private fun parseUriBased(raw: String): ServerTarget? {
-        val regex = Regex("""(?i)^(?:vless|trojan|tuic|hy2|hysteria2|hysteria)://(?:[^@]+@)?([^:/?#]+):(\d+)""")
-        val match = regex.find(raw)
-        if (match != null) {
-            val host = match.groupValues[1]
-            val port = match.groupValues[2].toIntOrNull() ?: 443
-            return ServerTarget(host, port)
+        val cleanUrl = raw.substringBefore("#").trim()
+        return try {
+            val uri = Uri.parse(cleanUrl)
+            val host = uri.host?.trim()?.trim('[', ']')
+            val port = uri.port
+
+            if (!host.isNullOrBlank()) {
+                val validPort = if (port in 1..65535) port else 443
+                ServerTarget(host, validPort)
+            } else {
+                parseGenericFallback(raw)
+            }
+        } catch (_: Exception) {
+            parseGenericFallback(raw)
         }
-        return parseGenericFallback(raw)
     }
 
     private fun parseShadowsocks(raw: String): ServerTarget? {
-        val body = raw.substringAfter("ss://").substringBefore("#")
+        val body = raw.substringAfter("ss://").substringBefore("#").trim()
+        if (body.isBlank()) return null
+
         if (body.contains("@")) {
-            val hostPort = body.substringAfter("@")
-            val host = hostPort.substringBefore(":")
-            val portStr = hostPort.substringAfter(":").substringBefore("/")
+            val hostPortStr = body.substringBefore("?").substringAfter("@")
+            val host = hostPortStr.substringBefore(":").trim().trim('[', ']')
+            val portStr = hostPortStr.substringAfter(":", "8388").trim()
             val port = portStr.toIntOrNull() ?: 8388
             if (host.isNotBlank()) return ServerTarget(host, port)
-        } else {
-            try {
-                val decoded = String(Base64.decode(body, Base64.DEFAULT or Base64.NO_WRAP or Base64.URL_SAFE), StandardCharsets.UTF_8)
-                if (decoded.contains("@")) {
-                    val hostPort = decoded.substringAfter("@")
-                    val host = hostPort.substringBefore(":")
-                    val portStr = hostPort.substringAfter(":").substringBefore("/")
-                    val port = portStr.toIntOrNull() ?: 8388
-                    if (host.isNotBlank()) return ServerTarget(host, port)
-                }
-            } catch (_: Exception) {}
+        }
+
+        val decoded = decodeBase64Safe(body.substringBefore("?"))
+        if (decoded.contains("@")) {
+            val hostPortStr = decoded.substringAfter("@")
+            val host = hostPortStr.substringBefore(":").trim().trim('[', ']')
+            val portStr = hostPortStr.substringAfter(":", "8388").trim()
+            val port = portStr.toIntOrNull() ?: 8388
+            if (host.isNotBlank()) return ServerTarget(host, port)
+        }
+
+        return parseGenericFallback(raw)
+    }
+
+    private fun parseShadowsocksR(raw: String): ServerTarget? {
+        val body = raw.substringAfter("ssr://").substringBefore("#").trim()
+        val decoded = decodeBase64Safe(body)
+        if (decoded.isNotBlank()) {
+            val parts = decoded.split(":")
+            if (parts.size >= 2) {
+                val host = parts[0].trim().trim('[', ']')
+                val port = parts[1].toIntOrNull() ?: 8388
+                if (host.isNotBlank()) return ServerTarget(host, port)
+            }
         }
         return parseGenericFallback(raw)
     }
 
     private fun parseGenericFallback(raw: String): ServerTarget? {
-        val hostPortRegex = Regex("""@([a-zA-Z0-9.-]+):(\d{1,5})""")
-        val match = hostPortRegex.find(raw)
-        if (match != null) {
-            val host = match.groupValues[1]
-            val port = match.groupValues[2].toIntOrNull() ?: 443
-            return ServerTarget(host, port)
+        val atHostPortRegex = Regex("""@([a-zA-Z0-9.-]+|\[[a-fA-F0-9:]+\]):(\d{1,5})""")
+        val matchAt = atHostPortRegex.find(raw)
+        if (matchAt != null) {
+            val host = matchAt.groupValues[1].trim('[').trim(']')
+            val port = matchAt.groupValues[2].toIntOrNull() ?: 443
+            if (host.isNotBlank()) return ServerTarget(host, port)
         }
 
-        val plainRegex = Regex("""([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}):(\d{1,5})""")
-        val matchPlain = plainRegex.find(raw)
-        if (matchPlain != null) {
-            val host = matchPlain.groupValues[1]
-            val port = matchPlain.groupValues[2].toIntOrNull() ?: 443
-            return ServerTarget(host, port)
+        val domainPortRegex = Regex("""([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}):(\d{1,5})""")
+        val matchDomain = domainPortRegex.find(raw)
+        if (matchDomain != null) {
+            val host = matchDomain.groupValues[1]
+            val port = matchDomain.groupValues[2].toIntOrNull() ?: 443
+            if (host.isNotBlank()) return ServerTarget(host, port)
+        }
+
+        val ipPortRegex = Regex("""(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})""")
+        val matchIp = ipPortRegex.find(raw)
+        if (matchIp != null) {
+            val host = matchIp.groupValues[1]
+            val port = matchIp.groupValues[2].toIntOrNull() ?: 443
+            if (host.isNotBlank()) return ServerTarget(host, port)
         }
 
         return null
     }
 
-    suspend fun pingServer(target: ServerTarget, timeoutMs: Int = 2500): Long {
+    suspend fun pingServer(target: ServerTarget, timeoutMs: Int = 3000): Long {
         return withContext(Dispatchers.IO) {
+            val cleanHost = target.host.trim().trim('[', ']')
+            if (cleanHost.isBlank() || target.port !in 1..65535) return@withContext -1L
+
             val startTime = System.currentTimeMillis()
             try {
                 val socket = Socket()
-                socket.connect(InetSocketAddress(target.host, target.port), timeoutMs)
+                val socketAddress = InetSocketAddress(cleanHost, target.port)
+                socket.connect(socketAddress, timeoutMs)
                 val latency = System.currentTimeMillis() - startTime
-                socket.close()
-                if (latency == 0L) 1L else latency
+                try { socket.close() } catch (_: Exception) {}
+                if (latency <= 0L) 1L else latency
             } catch (_: Exception) {
                 -1L
             }

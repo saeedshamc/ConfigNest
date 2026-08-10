@@ -332,38 +332,61 @@ fun MainScreen(
                     )
                 }
 
-                items(ProtocolType.entries.filter { it != ProtocolType.OTHER }) { protocol ->
+                items(ProtocolType.entries) { protocol ->
                     val count = allConfigs.count { it.protocol == protocol }
-                    FilterChip(
-                        selected = selectedProtocol == protocol,
-                        onClick = {
-                            viewModel.setSelectedProtocol(if (selectedProtocol == protocol) null else protocol)
-                        },
-                        label = { Text("${protocol.displayName} ($count)") },
-                        modifier = Modifier.testTag("filter_${protocol.name}")
-                    )
+                    if (count > 0) {
+                        FilterChip(
+                            selected = selectedProtocol == protocol && selectedSourceType == null,
+                            onClick = {
+                                if (selectedProtocol == protocol) {
+                                    viewModel.setSelectedProtocol(null)
+                                } else {
+                                    viewModel.setSelectedProtocol(protocol)
+                                    viewModel.setSelectedSourceType(null)
+                                }
+                            },
+                            label = { Text("${protocol.displayName} ($count)") },
+                            modifier = Modifier.testTag("filter_${protocol.name}")
+                        )
+                    }
                 }
 
                 item {
-                    FilterChip(
-                        selected = selectedSourceType == SourceType.TELEGRAM,
-                        onClick = {
-                            viewModel.setSelectedSourceType(if (selectedSourceType == SourceType.TELEGRAM) null else SourceType.TELEGRAM)
-                        },
-                        label = { Text("Telegram Sources") },
-                        modifier = Modifier.testTag("filter_telegram")
-                    )
+                    val tgCount = allConfigs.count { it.sourceType == SourceType.TELEGRAM }
+                    if (tgCount > 0) {
+                        FilterChip(
+                            selected = selectedSourceType == SourceType.TELEGRAM,
+                            onClick = {
+                                if (selectedSourceType == SourceType.TELEGRAM) {
+                                    viewModel.setSelectedSourceType(null)
+                                } else {
+                                    viewModel.setSelectedSourceType(SourceType.TELEGRAM)
+                                    viewModel.setSelectedProtocol(null)
+                                }
+                            },
+                            label = { Text("Telegram ($tgCount)") },
+                            modifier = Modifier.testTag("filter_telegram")
+                        )
+                    }
                 }
 
                 item {
-                    FilterChip(
-                        selected = selectedSourceType == SourceType.GITHUB,
-                        onClick = {
-                            viewModel.setSelectedSourceType(if (selectedSourceType == SourceType.GITHUB) null else SourceType.GITHUB)
-                        },
-                        label = { Text("GitHub Sources") },
-                        modifier = Modifier.testTag("filter_github")
-                    )
+                    val ghCount = allConfigs.count { it.sourceType == SourceType.GITHUB }
+                    if (ghCount > 0) {
+                        FilterChip(
+                            selected = selectedSourceType == SourceType.GITHUB,
+                            onClick = {
+                                if (selectedSourceType == SourceType.GITHUB) {
+                                    viewModel.setSelectedSourceType(null)
+                                } else {
+                                    viewModel.setSelectedSourceType(SourceType.GITHUB)
+                                    viewModel.setSelectedProtocol(null)
+                                }
+                            },
+                            label = { Text("GitHub ($ghCount)") },
+                            modifier = Modifier.testTag("filter_github")
+                        )
+                    }
                 }
             }
 
