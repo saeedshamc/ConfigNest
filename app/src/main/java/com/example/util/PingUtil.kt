@@ -58,12 +58,13 @@ object PingUtil {
 
         return try {
             val json = JSONObject(jsonStr)
-            val host = json.optString("add").ifBlank { json.optString("host") }.trim().trim('[', ']')
+            val hostRaw = json.optString("add").ifBlank { json.optString("host") }
+            val host = hostRaw.trim().trim('[', ']')
             val portObj = json.opt("port")
             val port = when (portObj) {
                 is Int -> portObj
                 is Number -> portObj.toInt()
-                is String -> portObj.toIntOrNull() ?: 443
+                is String -> portObj.substringBefore("/").substringBefore("?").trim().toIntOrNull() ?: 443
                 else -> 443
             }
 
@@ -107,11 +108,11 @@ object PingUtil {
                     if (hostPortPart.startsWith("[")) {
                         fallbackHost = hostPortPart.substringBefore("]").substringAfter("[").trim()
                         val afterBracket = hostPortPart.substringAfter("]", "")
-                        val portStr = if (afterBracket.startsWith(":")) afterBracket.substringAfter(":") else ""
-                        fallbackPort = portStr.toIntOrNull()?.takeIf { it in 1..65535 } ?: 443
+                        val portStr = if (afterBracket.startsWith(":")) afterBracket.substringAfter(":").substringBefore("/").substringBefore("?") else ""
+                        fallbackPort = portStr.trim().toIntOrNull()?.takeIf { it in 1..65535 } ?: 443
                     } else if (hostPortPart.contains(":")) {
                         fallbackHost = hostPortPart.substringBefore(":").trim()
-                        fallbackPort = hostPortPart.substringAfter(":").trim().toIntOrNull()?.takeIf { it in 1..65535 } ?: 443
+                        fallbackPort = hostPortPart.substringAfter(":").substringBefore("/").substringBefore("?").trim().toIntOrNull()?.takeIf { it in 1..65535 } ?: 443
                     } else {
                         fallbackHost = hostPortPart.trim()
                         fallbackPort = 443
@@ -135,19 +136,20 @@ object PingUtil {
         if (body.isBlank()) return null
 
         if (body.contains("@")) {
-            val hostPortStr = body.substringBefore("?").substringAfter("@")
-            val host = hostPortStr.substringBefore(":").trim().trim('[', ']')
-            val portStr = hostPortStr.substringAfter(":", "8388").trim()
-            val port = portStr.toIntOrNull() ?: 8388
+            val userPortStr = body.substringBefore("?")
+            val hostPortStr = userPortStr.substringAfter("@")
+            val host = hostPortStr.substringBefore(":").substringBefore("/").trim().trim('[', ']')
+            val portStr = hostPortStr.substringAfter(":", "").substringBefore("/").substringBefore("?").trim()
+            val port = portStr.toIntOrNull()?.takeIf { it in 1..65535 } ?: 8388
             if (host.isNotBlank()) return ServerTarget(host, port)
         }
 
         val decoded = decodeBase64Safe(body.substringBefore("?"))
         if (decoded.contains("@")) {
             val hostPortStr = decoded.substringAfter("@")
-            val host = hostPortStr.substringBefore(":").trim().trim('[', ']')
-            val portStr = hostPortStr.substringAfter(":", "8388").trim()
-            val port = portStr.toIntOrNull() ?: 8388
+            val host = hostPortStr.substringBefore(":").substringBefore("/").trim().trim('[', ']')
+            val portStr = hostPortStr.substringAfter(":", "").substringBefore("/").substringBefore("?").trim()
+            val port = portStr.toIntOrNull()?.takeIf { it in 1..65535 } ?: 8388
             if (host.isNotBlank()) return ServerTarget(host, port)
         }
 
@@ -161,7 +163,8 @@ object PingUtil {
             val parts = decoded.split(":")
             if (parts.size >= 2) {
                 val host = parts[0].trim().trim('[', ']')
-                val port = parts[1].toIntOrNull() ?: 8388
+                val portStr = parts[1].substringBefore("/").substringBefore("?").trim()
+                val port = portStr.toIntOrNull()?.takeIf { it in 1..65535 } ?: 8388
                 if (host.isNotBlank()) return ServerTarget(host, port)
             }
         }
@@ -173,15 +176,7 @@ object PingUtil {
         val matchAt = atHostPortRegex.find(raw)
         if (matchAt != null) {
             val host = matchAt.groupValues[1].trim('[').trim(']')
-            val port = matchAt.groupValues[2].toIntOrNull() ?: 443
-            if (host.isNotBlank()) return ServerTarget(host, port)
-        }
-
-        val domainPortRegex = Regex("""([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}):(\d{1,5})""")
-        val matchDomain = domainPortRegex.find(raw)
-        if (matchDomain != null) {
-            val host = matchDomain.groupValues[1]
-            val port = matchDomain.groupValues[2].toIntOrNull() ?: 443
+            val port = matchAt.groupValues[2].toIntOrNull()?.takeIf { it in 1..65535 } ?: 443
             if (host.isNotBlank()) return ServerTarget(host, port)
         }
 
@@ -189,7 +184,15 @@ object PingUtil {
         val matchIp = ipPortRegex.find(raw)
         if (matchIp != null) {
             val host = matchIp.groupValues[1]
-            val port = matchIp.groupValues[2].toIntOrNull() ?: 443
+            val port = matchIp.groupValues[2].toIntOrNull()?.takeIf { it in 1..65535 } ?: 443
+            if (host.isNotBlank()) return ServerTarget(host, port)
+        }
+
+        val domainPortRegex = Regex("""([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}):(\d{1,5})""")
+        val matchDomain = domainPortRegex.find(raw)
+        if (matchDomain != null) {
+            val host = matchDomain.groupValues[1]
+            val port = matchDomain.groupValues[2].toIntOrNull()?.takeIf { it in 1..65535 } ?: 443
             if (host.isNotBlank()) return ServerTarget(host, port)
         }
 
@@ -205,7 +208,6 @@ object PingUtil {
             val cleanHost = target.host.trim().trim('[', ']')
             if (cleanHost.isBlank() || target.port !in 1..65535) return@withContext -1L
 
-            val startTime = System.currentTimeMillis()
             try {
                 val socket = if (proxySettings != null && proxySettings.enabled && proxySettings.host.isNotBlank() && proxySettings.port in 1..65535) {
                     val pType = if (proxySettings.type == com.example.model.ProxyType.SOCKS) java.net.Proxy.Type.SOCKS else java.net.Proxy.Type.HTTP
@@ -215,14 +217,29 @@ object PingUtil {
                     Socket()
                 }
 
-                val socketAddress = InetSocketAddress(cleanHost, target.port)
-                socket.connect(socketAddress, timeoutMs)
-                val latency = System.currentTimeMillis() - startTime
-                try { socket.close() } catch (_: Exception) {}
-                if (latency <= 0L) 1L else latency
+                val socketAddress = if (proxySettings != null && proxySettings.enabled) {
+                    InetSocketAddress.createUnresolved(cleanHost, target.port)
+                } else {
+                    InetSocketAddress(cleanHost, target.port)
+                }
+
+                if (socketAddress.isUnresolved && (proxySettings == null || !proxySettings.enabled)) {
+                    return@withContext -1L
+                }
+
+                val startTime = System.nanoTime()
+                try {
+                    socket.connect(socketAddress, timeoutMs)
+                    val endTime = System.nanoTime()
+                    val latency = (endTime - startTime) / 1_000_000L
+                    if (latency <= 0L) 1L else latency
+                } finally {
+                    try { socket.close() } catch (_: Exception) {}
+                }
             } catch (_: Exception) {
                 -1L
             }
         }
     }
 }
+
