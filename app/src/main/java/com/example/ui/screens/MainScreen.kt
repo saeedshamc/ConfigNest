@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,6 +29,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CopyAll
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -92,6 +96,18 @@ fun MainScreen(
     val isPinging by viewModel.isPinging.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let { viewModel.exportConfigsToJson(context, it) }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { viewModel.importConfigsFromJson(context, it) }
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -214,6 +230,26 @@ fun MainScreen(
                                     showMenu = false
                                 },
                                 leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Export Configs to JSON") },
+                                onClick = {
+                                    showMenu = false
+                                    val sdf = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault())
+                                    val fileName = "v2ray_configs_${sdf.format(java.util.Date())}.json"
+                                    exportLauncher.launch(fileName)
+                                },
+                                leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Import Configs from JSON") },
+                                onClick = {
+                                    showMenu = false
+                                    importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                                },
+                                leadingIcon = { Icon(Icons.Default.FileUpload, contentDescription = null) }
                             )
                         }
                     }

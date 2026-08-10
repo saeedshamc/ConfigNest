@@ -289,6 +289,53 @@ class MainViewModel(
         context.startActivity(shareIntent)
     }
 
+    fun exportConfigsToJson(context: Context, uri: android.net.Uri) {
+        val currentList = allConfigs.value
+        if (currentList.isEmpty()) {
+            Toast.makeText(context, "No configurations available to export", Toast.LENGTH_SHORT).show()
+            return
+        }
+        viewModelScope.launch {
+            val success = com.example.util.JsonIOUtil.exportConfigsToJson(context, uri, currentList)
+            val msg = if (success) {
+                "Successfully exported ${currentList.size} configs to JSON!"
+            } else {
+                "Failed to export configs to JSON."
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            _snackbarEvent.emit(msg)
+        }
+    }
+
+    fun importConfigsFromJson(context: Context, uri: android.net.Uri) {
+        viewModelScope.launch {
+            val imported = com.example.util.JsonIOUtil.importConfigsFromJson(context, uri)
+            if (imported.isEmpty()) {
+                val msg = "No valid configurations found in JSON file."
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                _snackbarEvent.emit(msg)
+                return@launch
+            }
+
+            val existingRawConfigs = _allConfigs.value.map { it.rawConfig.trim() }.toSet()
+            val newConfigs = imported.filterNot { existingRawConfigs.contains(it.rawConfig.trim()) }
+
+            val merged = _allConfigs.value + newConfigs
+            _allConfigs.value = merged
+            val now = System.currentTimeMillis()
+            _lastUpdated.value = now
+            sourceRepository.saveCachedConfigs(merged, now)
+
+            val msg = if (newConfigs.isNotEmpty()) {
+                "Imported ${newConfigs.size} new configurations (${imported.size - newConfigs.size} duplicates skipped)."
+            } else {
+                "All ${imported.size} configurations in file are already saved."
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            _snackbarEvent.emit(msg)
+        }
+    }
+
     fun formatLastUpdatedTime(timestamp: Long): String {
         if (timestamp <= 0) return "Never"
         val sdf = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
