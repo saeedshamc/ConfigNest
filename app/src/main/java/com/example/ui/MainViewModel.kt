@@ -60,12 +60,22 @@ class MainViewModel(
     val selectedSourceType = MutableStateFlow<SourceType?>(null)
     val searchQuery = MutableStateFlow("")
 
+    private fun getLatencyRank(lat: Long?): Int {
+        return when {
+            lat != null && lat > 0L -> 1  // Valid ping -> Top group
+            lat != null && lat == -2L -> 2 // Currently testing...
+            lat == null -> 3              // Not tested yet
+            else -> 4                     // Failed / Timeout (-1)
+        }
+    }
+
     val filteredConfigs: StateFlow<List<ConfigItem>> = combine(
         _allConfigs,
         selectedProtocol,
         selectedSourceType,
-        searchQuery
-    ) { configs, protocol, sourceType, query ->
+        searchQuery,
+        configLatencies
+    ) { configs, protocol, sourceType, query, latencies ->
         configs.filter { item ->
             val matchesProtocol = (protocol == null || item.protocol == protocol)
             val matchesSourceType = (sourceType == null || item.sourceType == sourceType)
@@ -75,6 +85,20 @@ class MainViewModel(
                     item.rawConfig.contains(query, ignoreCase = true)
 
             matchesProtocol && matchesSourceType && matchesQuery
+        }.sortedWith { a, b ->
+            val latA = latencies[a.id]
+            val latB = latencies[b.id]
+
+            val rankA = getLatencyRank(latA)
+            val rankB = getLatencyRank(latB)
+
+            if (rankA != rankB) {
+                rankA.compareTo(rankB)
+            } else if (rankA == 1) { // Both have valid positive latency
+                (latA!!).compareTo(latB!!)
+            } else {
+                0
+            }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -109,6 +133,7 @@ class MainViewModel(
             val result = fetcherRepository.fetchAllSources(currentSources)
 
             _allConfigs.value = result.configs
+            configLatencies.value = emptyMap()
             val now = System.currentTimeMillis()
             _lastUpdated.value = now
 
