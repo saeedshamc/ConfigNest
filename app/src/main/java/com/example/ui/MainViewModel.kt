@@ -28,6 +28,7 @@ import java.util.Date
 import java.util.Locale
 
 class MainViewModel(
+    private val applicationContext: Context,
     private val sourceRepository: SourceRepository,
     private val fetcherRepository: ConfigFetcherRepository
 ) : ViewModel() {
@@ -91,6 +92,13 @@ class MainViewModel(
     fun refreshConfigs() {
         if (isFetching.value) return
         viewModelScope.launch {
+            if (!com.example.util.NetworkUtils.isNetworkAvailable(applicationContext)) {
+                val offlineMsg = "No internet connection. Please check your network and try again."
+                fetchStatusMessage.value = offlineMsg
+                _snackbarEvent.emit(offlineMsg)
+                return@launch
+            }
+
             isFetching.value = true
             fetchStatusMessage.value = "Fetching live configs in parallel..."
 
@@ -219,9 +227,10 @@ class MainViewModel(
     class Factory(private val context: Context) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            val sourceRepo = SourceRepository(context.applicationContext)
+            val appContext = context.applicationContext
+            val sourceRepo = SourceRepository(appContext)
             val fetcherRepo = ConfigFetcherRepository()
-            return MainViewModel(sourceRepo, fetcherRepo) as T
+            return MainViewModel(appContext, sourceRepo, fetcherRepo) as T
         }
     }
 }

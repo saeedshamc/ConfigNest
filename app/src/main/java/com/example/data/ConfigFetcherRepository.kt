@@ -115,6 +115,7 @@ class ConfigFetcherRepository {
     }
 
     private fun fetchSingleSource(source: ConfigSource): List<String>? {
+        android.util.Log.d("ConfigFetcher", "Starting fetch for source '${source.name}' from ${source.url}")
         return try {
             val request = Request.Builder()
                 .url(source.url)
@@ -122,42 +123,75 @@ class ConfigFetcherRepository {
 
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    android.util.Log.w("ConfigFetcher", "HTTP ${response.code} for source ${source.name} (${source.url})")
+                    android.util.Log.w("ConfigFetcher", "HTTP ${response.code} ${response.message} for source '${source.name}' (${source.url})")
                     return null
                 }
-                val bodyText = response.body?.string() ?: return null
-
-                when (source.type) {
-                    SourceType.TELEGRAM -> parseTelegramHtml(bodyText)
-                    SourceType.GITHUB -> parseGitHubText(bodyText)
+                val bodyText = response.body?.string()
+                if (bodyText.isNullOrBlank()) {
+                    android.util.Log.w("ConfigFetcher", "Received empty response body for source '${source.name}' (${source.url})")
+                    return null
                 }
+
+                val configs = when (source.type) {
+                    SourceType.TELEGRAM -> parseTelegramHtml(bodyText, source)
+                    SourceType.GITHUB -> parseGitHubText(bodyText, source)
+                }
+
+                android.util.Log.i("ConfigFetcher", "Successfully extracted ${configs.size} configs from '${source.name}' (${source.url})")
+                configs
             }
         } catch (e: Exception) {
-            android.util.Log.e("ConfigFetcher", "Failed fetching ${source.name} (${source.url}): ${e.message}", e)
+            android.util.Log.e("ConfigFetcher", "Failed fetching source '${source.name}' (${source.url}): ${e.javaClass.simpleName} - ${e.message}", e)
             null
         }
     }
 
-    private fun parseGitHubText(bodyText: String): List<String> {
+    private fun parseGitHubText(bodyText: String, source: ConfigSource): List<String> {
         val directLines = extractConfigsFromText(bodyText)
         if (directLines.isNotEmpty()) {
+            android.util.Log.d("ConfigFetcher", "GitHub source '${source.name}': extracted ${directLines.size} direct configs")
             return directLines
         }
 
         val decoded = tryBase64Decode(bodyText)
         if (!decoded.isNullOrBlank()) {
-            return extractConfigsFromText(decoded)
+            val decodedLines = extractConfigsFromText(decoded)
+            if (decodedLines.isNotEmpty()) {
+                android.util.Log.d("ConfigFetcher", "GitHub source '${source.name}': extracted ${decodedLines.size} configs after Base64 decoding")
+                return decodedLines
+            }
         }
 
+        android.util.Log.w("ConfigFetcher", "GitHub source '${source.name}': zero configs found in raw body or decoded base64 content")
         return emptyList()
     }
 
-    private fun parseTelegramHtml(htmlText: String): List<String> {
+    private fun parseTelegramHtml(htmlText: String, source: ConfigSource): List<String> {
+        val resultList = mutableListOf<String>()
+
+        // 1. Direct href extraction for links in Telegram HTML elements
+        val hrefRegex = Pattern.compile("href=['\"]((?:vmess|vless|trojan|ss|ssr|hysteria2|hy2|tuic)://[^'\"]+)['\"]", Pattern.CASE_INSENSITIVE)
+        val matcher = hrefRegex.matcher(htmlText)
+        while (matcher.find()) {
+            val link = matcher.group(1)?.trim()
+            if (!link.isNullOrBlank()) {
+                resultList.add(link)
+            }
+        }
+
+        // 2. Clean HTML tags and parse remaining message body
         val cleanText = htmlText
             .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-            .replace(Regex("</?(p|div|span|code|pre)[^>]*>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("</?(p|div|span|code|pre|a)[^>]*>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("<[^>]+>"), " ")
         val unescaped = unescapeHtml(cleanText)
-        return extractConfigsFromText(unescaped)
+
+        val textExtracted = extractConfigsFromText(unescaped)
+        resultList.addAll(textExtracted)
+
+        val uniqueConfigs = resultList.distinct()
+        android.util.Log.d("ConfigFetcher", "Telegram source '${source.name}': extracted ${uniqueConfigs.size} unique configs from HTML")
+        return uniqueConfigs
     }
 
     private fun extractConfigsFromText(text: String): List<String> {
@@ -167,7 +201,7 @@ class ConfigFetcherRepository {
         while (matcher.find()) {
             var match = matcher.group()
             if (match != null) {
-                match = match.trimEnd('.', ',', ';', ')', ']', '}', '>', '"', '\'')
+                match = match.trimEnd('.', ',', ';', ')', ']', '}', '>', '"', '\'', ' ', '\t', '\r')
                 if (match.isNotBlank()) {
                     result.add(match)
                 }
@@ -183,15 +217,39 @@ class ConfigFetcherRepository {
             }
         }
 
-        return result
+        return result.distinct()
     }
 
     private fun tryBase64Decode(content: String): String? {
         return try {
-            val clean = content.replace("\n", "").replace("\r", "").replace(" ", "").trim()
+            var clean = content.replace("\n", "").replace("\r", "").replace(" ", "").trim()
             if (clean.isBlank()) return null
-            val bytes = Base64.decode(clean, Base64.DEFAULT or Base64.NO_WRAP or Base64.URL_SAFE)
-            String(bytes, Charsets.UTF_8)
+
+            // Add missing padding if needed
+            val missingPadding = clean.length % 4
+            if (missingPadding > 0) {
+                clean += "=".repeat(4 - missingPadding)
+            }
+
+            val flagsToTry = intArrayOf(
+                Base64.DEFAULT,
+                Base64.NO_WRAP,
+                Base64.URL_SAFE,
+                Base64.NO_PADDING or Base64.NO_WRAP
+            )
+
+            for (flag in flagsToTry) {
+                try {
+                    val bytes = Base64.decode(clean, flag)
+                    val str = String(bytes, Charsets.UTF_8)
+                    if (str.isNotBlank() && PROTOCOL_PREFIXES.any { str.contains(it, ignoreCase = true) }) {
+                        return str
+                    }
+                } catch (_: Exception) {
+                    // Try next flag
+                }
+            }
+            null
         } catch (_: Exception) {
             null
         }
