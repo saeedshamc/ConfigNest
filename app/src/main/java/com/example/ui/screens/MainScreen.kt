@@ -34,15 +34,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CopyAll
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -51,12 +57,16 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -100,7 +110,14 @@ fun MainScreen(
     val configLatencies by viewModel.configLatencies.collectAsState()
     val isPinging by viewModel.isPinging.collectAsState()
 
+    val rawSortedFilteredConfigs by viewModel.rawSortedFilteredConfigs.collectAsState()
+    val proxySettings by viewModel.proxySettings.collectAsState()
+    val autoRemoveDeadConfigs by viewModel.autoRemoveDeadConfigs.collectAsState()
+    val batchLimit by viewModel.batchLimit.collectAsState()
+
     var showMenu by remember { mutableStateOf(false) }
+    var showProxyDialog by remember { mutableStateOf(false) }
+    var showClearConfirmDialog by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -248,6 +265,24 @@ fun MainScreen(
                             )
 
                             DropdownMenuItem(
+                                text = { Text("Delete Timed-Out Configs") },
+                                onClick = {
+                                    viewModel.deleteFailedConfigs()
+                                    showMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Proxy & Ping Settings") },
+                                onClick = {
+                                    showProxyDialog = true
+                                    showMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.Dns, contentDescription = null) }
+                            )
+
+                            DropdownMenuItem(
                                 text = { Text("Export Configs to JSON") },
                                 onClick = {
                                     showMenu = false
@@ -265,6 +300,15 @@ fun MainScreen(
                                     importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                                 },
                                 leadingIcon = { Icon(Icons.Default.FileUpload, contentDescription = null) }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Clear All Saved Configs") },
+                                onClick = {
+                                    showClearConfirmDialog = true
+                                    showMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                             )
                         }
                     }
@@ -405,7 +449,106 @@ fun MainScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // Batch Limit and Quick Action Controls Row
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Batch:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        val limitOptions = listOf(50, 100, 200, 500, null)
+                        limitOptions.forEach { limit ->
+                            val isSelected = batchLimit == limit
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.updateBatchLimit(limit) },
+                                label = {
+                                    Text(
+                                        text = if (limit == null) "All" else "$limit",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                },
+                                modifier = Modifier
+                                    .height(28.dp)
+                                    .testTag("batch_limit_${limit ?: "all"}")
+                            )
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        IconButton(
+                            onClick = { viewModel.deleteFailedConfigs() },
+                            modifier = Modifier.size(32.dp).testTag("delete_dead_configs_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteSweep,
+                                contentDescription = "Delete Timed-out Configs",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { showProxyDialog = true },
+                            modifier = Modifier.size(32.dp).testTag("proxy_settings_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Dns,
+                                contentDescription = "Proxy & Ping Settings",
+                                tint = if (proxySettings.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Display counter summary
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Showing ${filteredConfigs.size} of ${rawSortedFilteredConfigs.size} matching (${allConfigs.size} total)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (proxySettings.enabled) {
+                    Text(
+                        text = "Proxy: ${proxySettings.type.name} ${proxySettings.host}:${proxySettings.port}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
 
             // Main Config List with Pull-to-Refresh
             val pullToRefreshState = rememberPullToRefreshState()
@@ -480,5 +623,158 @@ fun MainScreen(
                 }
             }
         }
+    }
+
+    // Proxy Settings Dialog
+    if (showProxyDialog) {
+        var proxyEnabled by remember { mutableStateOf(proxySettings.enabled) }
+        var proxyType by remember { mutableStateOf(proxySettings.type) }
+        var proxyHost by remember { mutableStateOf(proxySettings.host) }
+        var proxyPortStr by remember { mutableStateOf(proxySettings.port.toString()) }
+        var autoRemoveDead by remember { mutableStateOf(autoRemoveDeadConfigs) }
+
+        AlertDialog(
+            onDismissRequest = { showProxyDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Proxy & Ping Settings")
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto-remove Dead Configs", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Automatically delete configs that fail ping test (-1 ms)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = autoRemoveDead,
+                            onCheckedChange = { autoRemoveDead = it }
+                        )
+                    }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Use Proxy for Fetch & Ping", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                Switch(
+                                    checked = proxyEnabled,
+                                    onCheckedChange = { proxyEnabled = it }
+                                )
+                            }
+
+                            if (proxyEnabled) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        RadioButton(
+                                            selected = proxyType == com.example.model.ProxyType.SOCKS,
+                                            onClick = { proxyType = com.example.model.ProxyType.SOCKS }
+                                        )
+                                        Text("SOCKS5", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        RadioButton(
+                                            selected = proxyType == com.example.model.ProxyType.HTTP,
+                                            onClick = { proxyType = com.example.model.ProxyType.HTTP }
+                                        )
+                                        Text("HTTP", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+
+                                OutlinedTextField(
+                                    value = proxyHost,
+                                    onValueChange = { proxyHost = it },
+                                    label = { Text("Proxy Host Address") },
+                                    placeholder = { Text("127.0.0.1") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                OutlinedTextField(
+                                    value = proxyPortStr,
+                                    onValueChange = { proxyPortStr = it.filter { c -> c.isDigit() } },
+                                    label = { Text("Proxy Port") },
+                                    placeholder = { Text("1080") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val port = proxyPortStr.toIntOrNull() ?: 1080
+                    viewModel.updateProxySettings(
+                        com.example.model.ProxySettings(
+                            enabled = proxyEnabled,
+                            type = proxyType,
+                            host = proxyHost.trim().ifEmpty { "127.0.0.1" },
+                            port = port
+                        )
+                    )
+                    viewModel.updateAutoRemoveDead(autoRemoveDead)
+                    showProxyDialog = false
+                }) {
+                    Text("Save Settings")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showProxyDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Clear All Confirm Dialog
+    if (showClearConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirmDialog = false },
+            title = {
+                Text("Clear All Saved Configs")
+            },
+            text = {
+                Text("Are you sure you want to delete all saved configurations from local database?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearAllConfigs()
+                        showClearConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete All")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

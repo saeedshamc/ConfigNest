@@ -53,9 +53,17 @@ object NetworkManager {
         val errorMessage: String? = null
     )
 
-    fun fetchSource(source: ConfigSource): NetworkFetchResult {
+    fun fetchSource(source: ConfigSource, proxySettings: com.example.model.ProxySettings? = null): NetworkFetchResult {
         Log.i(TAG, "--------------------------------------------------")
         Log.i(TAG, "[FETCH START] Type=${source.type} Name='${source.name}' URL='${source.url}'")
+
+        val targetClient = if (proxySettings != null && proxySettings.enabled && proxySettings.host.isNotBlank() && proxySettings.port in 1..65535) {
+            val pType = if (proxySettings.type == com.example.model.ProxyType.SOCKS) java.net.Proxy.Type.SOCKS else java.net.Proxy.Type.HTTP
+            val proxy = java.net.Proxy(pType, java.net.InetSocketAddress(proxySettings.host.trim(), proxySettings.port))
+            client.newBuilder().proxy(proxy).build()
+        } else {
+            client
+        }
 
         val request = try {
             Request.Builder()
@@ -68,7 +76,7 @@ object NetworkManager {
         }
 
         return try {
-            client.newCall(request).execute().use { response ->
+            targetClient.newCall(request).execute().use { response ->
                 val code = response.code
                 val isSuccess = response.isSuccessful
                 val contentType = response.header("Content-Type") ?: "unknown"

@@ -39,6 +39,15 @@ class MainViewModel(
     val themeMode: StateFlow<ThemeMode> = sourceRepository.themeModeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
 
+    val proxySettings: StateFlow<com.example.model.ProxySettings> = sourceRepository.proxySettingsFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.example.model.ProxySettings())
+
+    val autoRemoveDeadConfigs: StateFlow<Boolean> = sourceRepository.autoRemoveDeadFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val batchLimit: StateFlow<Int?> = sourceRepository.batchLimitFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 100)
+
     private val _cachedConfigsPair = sourceRepository.cachedConfigsFlow
     private val _allConfigs = MutableStateFlow<List<ConfigItem>>(emptyList())
     val allConfigs: StateFlow<List<ConfigItem>> = _allConfigs
@@ -69,7 +78,7 @@ class MainViewModel(
         }
     }
 
-    val filteredConfigs: StateFlow<List<ConfigItem>> = combine(
+    val rawSortedFilteredConfigs: StateFlow<List<ConfigItem>> = combine(
         _allConfigs,
         selectedProtocol,
         selectedSourceType,
@@ -102,6 +111,17 @@ class MainViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val filteredConfigs: StateFlow<List<ConfigItem>> = combine(
+        rawSortedFilteredConfigs,
+        batchLimit
+    ) { configs, limit ->
+        if (limit != null && limit > 0) {
+            configs.take(limit)
+        } else {
+            configs
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     init {
         viewModelScope.launch {
             _cachedConfigsPair.collect { (cachedList, time) ->
@@ -130,17 +150,23 @@ class MainViewModel(
             fetchStatusMessage.value = "Fetching live configs in parallel..."
 
             val currentSources = sources.value.ifEmpty { com.example.data.DefaultSources.LIST }
-            val result = fetcherRepository.fetchAllSources(currentSources)
+            val currentProxy = proxySettings.value
+            val result = fetcherRepository.fetchAllSources(currentSources, currentProxy)
 
-            _allConfigs.value = result.configs
-            configLatencies.value = emptyMap()
+            val existingList = _allConfigs.value
+            val existingSet = existingList.map { it.rawConfig.trim() }.toSet()
+
+            val newlyFetchedUnique = result.configs.filterNot { existingSet.contains(it.rawConfig.trim()) }
+            val mergedList = existingList + newlyFetchedUnique
+
+            _allConfigs.value = mergedList
             val now = System.currentTimeMillis()
             _lastUpdated.value = now
 
-            sourceRepository.saveCachedConfigs(result.configs, now)
+            sourceRepository.saveCachedConfigs(mergedList, now)
 
             isFetching.value = false
-            val msg = "Updated ${result.configs.size} unique configs from ${result.successCount} sources (${result.failedCount} failed)"
+            val msg = "Added ${newlyFetchedUnique.size} new configs! Total saved: ${mergedList.size} (${result.failedCount} sources failed)"
             fetchStatusMessage.value = msg
             _snackbarEvent.emit(msg)
         }
@@ -202,12 +228,66 @@ class MainViewModel(
         }
     }
 
+    fun updateProxySettings(proxy: com.example.model.ProxySettings) {
+        viewModelScope.launch {
+            sourceRepository.saveProxySettings(proxy)
+            _snackbarEvent.emit(if (proxy.enabled) "Proxy enabled (${proxy.type.name} ${proxy.host}:${proxy.port})" else "Proxy disabled")
+        }
+    }
+
+    fun updateAutoRemoveDead(enabled: Boolean) {
+        viewModelScope.launch {
+            sourceRepository.saveAutoRemoveDead(enabled)
+            _snackbarEvent.emit(if (enabled) "Auto-remove dead configs enabled" else "Auto-remove dead configs disabled")
+        }
+    }
+
+    fun updateBatchLimit(limit: Int?) {
+        viewModelScope.launch {
+            sourceRepository.saveBatchLimit(limit)
+        }
+    }
+
+    fun clearAllConfigs() {
+        viewModelScope.launch {
+            _allConfigs.value = emptyList()
+            configLatencies.value = emptyMap()
+            val now = System.currentTimeMillis()
+            _lastUpdated.value = now
+            sourceRepository.saveCachedConfigs(emptyList(), now)
+            _snackbarEvent.emit("Cleared all saved configurations.")
+        }
+    }
+
+    fun deleteFailedConfigs() {
+        viewModelScope.launch {
+            val latencies = configLatencies.value
+            val beforeCount = _allConfigs.value.size
+            val remaining = _allConfigs.value.filter { item ->
+                val lat = latencies[item.id]
+                lat == null || lat == -2L || lat > 0L
+            }
+            val removedCount = beforeCount - remaining.size
+            if (removedCount > 0) {
+                _allConfigs.value = remaining
+                val now = System.currentTimeMillis()
+                _lastUpdated.value = now
+                sourceRepository.saveCachedConfigs(remaining, now)
+                val msg = "Deleted $removedCount timed-out / dead configs! Remaining: ${remaining.size}"
+                _snackbarEvent.emit(msg)
+            } else {
+                _snackbarEvent.emit("No timed-out configs found to delete.")
+            }
+        }
+    }
+
     fun pingSingleConfig(item: ConfigItem) {
         viewModelScope.launch {
             configLatencies.value = configLatencies.value + (item.id to -2L)
             val target = com.example.util.PingUtil.extractServerTarget(item.rawConfig, item.protocol)
+            val currentProxy = proxySettings.value
             val result = if (target != null) {
-                com.example.util.PingUtil.pingServer(target)
+                com.example.util.PingUtil.pingServer(target, timeoutMs = 3000, proxySettings = currentProxy)
             } else {
                 -1L
             }
@@ -226,6 +306,8 @@ class MainViewModel(
             currentList.forEach { updatedMap[it.id] = -2L }
             configLatencies.value = updatedMap
 
+            val currentProxy = proxySettings.value
+
             kotlinx.coroutines.coroutineScope {
                 val dispatcher = kotlinx.coroutines.Dispatchers.IO
                 val semaphore = kotlinx.coroutines.sync.Semaphore(12)
@@ -236,7 +318,7 @@ class MainViewModel(
                         try {
                             val target = com.example.util.PingUtil.extractServerTarget(item.rawConfig, item.protocol)
                             val latency = if (target != null) {
-                                com.example.util.PingUtil.pingServer(target)
+                                com.example.util.PingUtil.pingServer(target, timeoutMs = 3000, proxySettings = currentProxy)
                             } else {
                                 -1L
                             }
@@ -250,6 +332,10 @@ class MainViewModel(
 
             isPinging.value = false
             _snackbarEvent.emit("Ping test completed for ${currentList.size} servers!")
+
+            if (autoRemoveDeadConfigs.value) {
+                deleteFailedConfigs()
+            }
         }
     }
 

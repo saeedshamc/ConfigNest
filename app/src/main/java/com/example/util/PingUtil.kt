@@ -157,14 +157,25 @@ object PingUtil {
         return null
     }
 
-    suspend fun pingServer(target: ServerTarget, timeoutMs: Int = 3000): Long {
+    suspend fun pingServer(
+        target: ServerTarget,
+        timeoutMs: Int = 3000,
+        proxySettings: com.example.model.ProxySettings? = null
+    ): Long {
         return withContext(Dispatchers.IO) {
             val cleanHost = target.host.trim().trim('[', ']')
             if (cleanHost.isBlank() || target.port !in 1..65535) return@withContext -1L
 
             val startTime = System.currentTimeMillis()
             try {
-                val socket = Socket()
+                val socket = if (proxySettings != null && proxySettings.enabled && proxySettings.host.isNotBlank() && proxySettings.port in 1..65535) {
+                    val pType = if (proxySettings.type == com.example.model.ProxyType.SOCKS) java.net.Proxy.Type.SOCKS else java.net.Proxy.Type.HTTP
+                    val proxy = java.net.Proxy(pType, InetSocketAddress(proxySettings.host.trim(), proxySettings.port))
+                    Socket(proxy)
+                } else {
+                    Socket()
+                }
+
                 val socketAddress = InetSocketAddress(cleanHost, target.port)
                 socket.connect(socketAddress, timeoutMs)
                 val latency = System.currentTimeMillis() - startTime

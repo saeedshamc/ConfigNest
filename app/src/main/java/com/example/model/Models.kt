@@ -73,3 +73,16 @@ enum class ThemeMode {
     DARK,
     LIGHT
 }
+
+enum class ProxyType {
+    SOCKS,
+    HTTP
+}
+
+data class ProxySettings(
+    val enabled: Boolean = false,
+    val type: ProxyType = ProxyType.SOCKS,
+    val host: String = "127.0.0.1",
+    val port: Int = 1080
+)
+

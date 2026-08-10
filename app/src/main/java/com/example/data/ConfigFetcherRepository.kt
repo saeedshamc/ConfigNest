@@ -54,7 +54,10 @@ class ConfigFetcherRepository {
         Pattern.CASE_INSENSITIVE
     )
 
-    suspend fun fetchAllSources(sources: List<ConfigSource>): FetchResult = withContext(Dispatchers.IO) {
+    suspend fun fetchAllSources(
+        sources: List<ConfigSource>,
+        proxySettings: com.example.model.ProxySettings? = null
+    ): FetchResult = withContext(Dispatchers.IO) {
         val enabledSources = sources.filter { it.enabled }
         if (enabledSources.isEmpty()) {
             return@withContext FetchResult(emptyList(), 0, 0)
@@ -62,7 +65,7 @@ class ConfigFetcherRepository {
 
         val deferredResults = enabledSources.map { source ->
             async {
-                val extracted = fetchSingleSource(source)
+                val extracted = fetchSingleSource(source, proxySettings)
                 Pair(source, extracted)
             }
         }
@@ -118,8 +121,11 @@ class ConfigFetcherRepository {
         )
     }
 
-    private fun fetchSingleSource(source: ConfigSource): List<String>? {
-        val result = NetworkManager.fetchSource(source)
+    private fun fetchSingleSource(
+        source: ConfigSource,
+        proxySettings: com.example.model.ProxySettings? = null
+    ): List<String>? {
+        val result = NetworkManager.fetchSource(source, proxySettings)
         return if (result.isSuccess) {
             result.configs
         } else {
