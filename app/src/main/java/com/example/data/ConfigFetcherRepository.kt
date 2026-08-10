@@ -57,7 +57,8 @@ class ConfigFetcherRepository {
 
         val deferredResults = enabledSources.map { source ->
             async {
-                fetchSingleSource(source)
+                val extracted = fetchSingleSource(source)
+                Pair(source, extracted)
             }
         }
 
@@ -67,7 +68,9 @@ class ConfigFetcherRepository {
         var failedCount = 0
         val rawConfigMap = LinkedHashMap<String, Pair<ConfigSource, ProtocolType>>()
 
-        for ((source, extracted) in results) {
+        for (pair in results) {
+            val source = pair.first
+            val extracted = pair.second
             if (extracted != null) {
                 successCount++
                 for (configStr in extracted) {
@@ -75,7 +78,7 @@ class ConfigFetcherRepository {
                     if (trimmed.isBlank()) continue
 
                     val proto = ProtocolType.fromConfigString(trimmed)
-                    if (proto != ProtocolType.OTHER && !rawConfigMap.containsKey(trimmed)) {
+                    if (!rawConfigMap.containsKey(trimmed)) {
                         rawConfigMap[trimmed] = Pair(source, proto)
                     }
                 }
@@ -85,8 +88,10 @@ class ConfigFetcherRepository {
         }
 
         val configItems = rawConfigMap.map { (rawConfig, pair) ->
-            val (source, protocol) = pair
+            val source = pair.first
+            val protocol = pair.second
             val (flag, tag) = FlagUtil.extractFlagAndTag(rawConfig)
+            val (isMalformed, warningReason) = ConfigItem.validate(rawConfig, protocol)
 
             ConfigItem(
                 id = rawConfig.hashCode().toString(),
@@ -95,7 +100,9 @@ class ConfigFetcherRepository {
                 nameTag = tag,
                 countryFlag = flag,
                 sourceUrl = source.url,
-                sourceType = source.type
+                sourceType = source.type,
+                isMalformed = isMalformed,
+                warningReason = warningReason
             )
         }
 
@@ -132,7 +139,6 @@ class ConfigFetcherRepository {
             return directLines
         }
 
-        // Try base64 decoding if no direct configs found
         val decoded = tryBase64Decode(bodyText)
         if (!decoded.isNullOrBlank()) {
             return extractConfigsFromText(decoded)
@@ -149,18 +155,17 @@ class ConfigFetcherRepository {
     private fun extractConfigsFromText(text: String): List<String> {
         val result = mutableListOf<String>()
 
-        // First try regex matcher to catch configs embedded inside text or HTML
         val matcher = CONFIG_REGEX.matcher(text)
         while (matcher.find()) {
             var match = matcher.group()
-            // Strip trailing punctuation if accidentally matched
-            match = match.trimEnd('.', ',', ';', ')', ']', '}', '>', '"', '\'')
-            if (match.isNotBlank()) {
-                result.add(match)
+            if (match != null) {
+                match = match.trimEnd('.', ',', ';', ')', ']', '}', '>', '"', '\'')
+                if (match.isNotBlank()) {
+                    result.add(match)
+                }
             }
         }
 
-        // If regex didn't catch line-by-line format (e.g. clean line list)
         if (result.isEmpty()) {
             text.lines().forEach { line ->
                 val trimmed = line.trim()

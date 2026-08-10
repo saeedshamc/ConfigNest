@@ -47,8 +47,26 @@ data class ConfigItem(
     val nameTag: String,
     val countryFlag: String,
     val sourceUrl: String,
-    val sourceType: SourceType
-)
+    val sourceType: SourceType,
+    val isMalformed: Boolean = false,
+    val warningReason: String? = null
+) {
+    companion object {
+        fun validate(raw: String, protocol: ProtocolType): Pair<Boolean, String?> {
+            val trimmed = raw.trim()
+            if (protocol == ProtocolType.OTHER) {
+                return Pair(true, "Non-standard or missing protocol header")
+            }
+            if (trimmed.length < 12) {
+                return Pair(true, "Config string is unusually short")
+            }
+            if (!trimmed.contains("@") && !trimmed.contains("://")) {
+                return Pair(true, "Missing server host or authentication parameters")
+            }
+            return Pair(false, null)
+        }
+    }
+}
 
 enum class ThemeMode {
     SYSTEM,

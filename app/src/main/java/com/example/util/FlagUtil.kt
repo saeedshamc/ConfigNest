@@ -29,7 +29,6 @@ object FlagUtil {
         var flag = "🌐"
         var tag = ""
 
-        // Try getting tag after '#'
         val hashIndex = rawConfig.lastIndexOf('#')
         if (hashIndex != -1 && hashIndex < rawConfig.length - 1) {
             val hashTag = rawConfig.substring(hashIndex + 1).trim()
@@ -40,13 +39,11 @@ object FlagUtil {
             }
         }
 
-        // Check if there is an explicit emoji flag in the tag or config
         val flagRegex = Regex("[\\uD83C][\\uDDE6-\\uDDFF]{2}")
         val match = flagRegex.find(tag.ifEmpty { rawConfig })
         if (match != null) {
             flag = match.value
         } else {
-            // Check country codes in tag like [DE], |US|, DE-, etc.
             val upperTag = tag.uppercase(Locale.ROOT)
             for ((code, emoji) in COUNTRY_CODE_TO_FLAG) {
                 val patterns = listOf(" $code ", "[$code]", "|$code|", "-$code-", "$code-", "-$code", "_$code", "${code}_")

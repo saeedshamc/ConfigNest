@@ -14,6 +14,7 @@ import com.example.model.SourceType
 import com.example.model.ThemeMode
 import com.example.util.FlagUtil
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -99,9 +100,8 @@ class SourceRepository(private val context: Context) {
             enabled = true
         )
 
-        val current = deserializeSources(
-            context.dataStore.data.map { it[SOURCES_KEY] ?: "" }.collectFirst()
-        ).toMutableList()
+        val currentRaw = context.dataStore.data.map { it[SOURCES_KEY] ?: "" }.first()
+        val current = deserializeSources(currentRaw).toMutableList()
 
         current.add(newSource)
         saveSources(current)
@@ -135,12 +135,6 @@ class SourceRepository(private val context: Context) {
             cleanUrl = "https://$cleanUrl"
         }
         return Pair(cleanUrl, SourceType.GITHUB)
-    }
-
-    private suspend fun <T> Flow<T>.collectFirst(): T {
-        var result: T? = null
-        kotlinx.coroutines.flow.take(1).collect { result = it }
-        return result ?: throw IllegalStateException("Flow was empty")
     }
 
     private fun serializeSources(sources: List<ConfigSource>): String {
@@ -196,6 +190,8 @@ class SourceRepository(private val context: Context) {
             obj.put("countryFlag", item.countryFlag)
             obj.put("sourceUrl", item.sourceUrl)
             obj.put("sourceType", item.sourceType.name)
+            obj.put("isMalformed", item.isMalformed)
+            obj.put("warningReason", item.warningReason ?: "")
             array.put(obj)
         }
         return array.toString()
@@ -221,6 +217,7 @@ class SourceRepository(private val context: Context) {
                 }
 
                 val (flag, tag) = FlagUtil.extractFlagAndTag(rawConfig)
+                val (isMalformed, warningReason) = ConfigItem.validate(rawConfig, protocol)
 
                 list.add(
                     ConfigItem(
@@ -230,7 +227,9 @@ class SourceRepository(private val context: Context) {
                         nameTag = obj.optString("nameTag", tag),
                         countryFlag = obj.optString("countryFlag", flag),
                         sourceUrl = obj.optString("sourceUrl", ""),
-                        sourceType = sourceType
+                        sourceType = sourceType,
+                        isMalformed = obj.optBoolean("isMalformed", isMalformed),
+                        warningReason = obj.optString("warningReason").ifEmpty { warningReason }
                     )
                 )
             }

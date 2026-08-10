@@ -159,7 +159,7 @@ fun SettingsScreen(
                         }
 
                         Text(
-                            text = "Background auto-refresh is turned off by default to ensure zero battery drain and no persistent background services. You can tap 'Fetch All' anytime to pull the latest free configs in parallel.",
+                            text = "Background auto-refresh is turned off by default to ensure zero battery drain and no persistent background services. You can tap 'Fetch All' or pull down anytime to pull the latest free configs in parallel.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

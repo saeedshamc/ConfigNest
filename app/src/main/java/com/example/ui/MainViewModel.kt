@@ -15,7 +15,9 @@ import com.example.model.ConfigSource
 import com.example.model.ProtocolType
 import com.example.model.SourceType
 import com.example.model.ThemeMode
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -45,6 +47,10 @@ class MainViewModel(
 
     val isFetching = MutableStateFlow(false)
     val fetchStatusMessage = MutableStateFlow<String?>(null)
+
+    // Snackbar event channel
+    private val _snackbarEvent = MutableSharedFlow<String>()
+    val snackbarEvent: SharedFlow<String> = _snackbarEvent
 
     val selectedProtocol = MutableStateFlow<ProtocolType?>(null)
     val selectedSourceType = MutableStateFlow<SourceType?>(null)
@@ -83,7 +89,7 @@ class MainViewModel(
         if (isFetching.value) return
         viewModelScope.launch {
             isFetching.value = true
-            fetchStatusMessage.value = "Fetching configs in parallel..."
+            fetchStatusMessage.value = "Fetching live configs in parallel..."
 
             val currentSources = sources.value
             val result = fetcherRepository.fetchAllSources(currentSources)
@@ -95,7 +101,9 @@ class MainViewModel(
             sourceRepository.saveCachedConfigs(result.configs, now)
 
             isFetching.value = false
-            fetchStatusMessage.value = "Updated ${result.configs.size} unique configs from ${result.successCount} sources (${result.failedCount} failed)"
+            val msg = "Updated ${result.configs.size} unique configs from ${result.successCount} sources (${result.failedCount} failed)"
+            fetchStatusMessage.value = msg
+            _snackbarEvent.emit(msg)
         }
     }
 
@@ -159,7 +167,11 @@ class MainViewModel(
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("V2Ray Config", item.rawConfig)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(context, "Copied ${item.protocol.displayName} config", Toast.LENGTH_SHORT).show()
+        val message = "Copied ${item.protocol.displayName} config to clipboard!"
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        viewModelScope.launch {
+            _snackbarEvent.emit(message)
+        }
     }
 
     fun copyFilteredConfigs(context: Context) {
@@ -172,7 +184,11 @@ class MainViewModel(
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("V2Ray Config List", combined)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(context, "Copied ${currentList.size} configs to clipboard!", Toast.LENGTH_LONG).show()
+        val successMessage = "Successfully copied ${currentList.size} configs to clipboard!"
+        Toast.makeText(context, successMessage, Toast.LENGTH_LONG).show()
+        viewModelScope.launch {
+            _snackbarEvent.emit(successMessage)
+        }
     }
 
     fun shareFilteredConfigs(context: Context) {

@@ -1,6 +1,7 @@
 package com.example.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
+import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,9 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -28,6 +30,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,165 +40,305 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.ConfigItem
 import com.example.model.ProtocolType
 import com.example.model.SourceType
+import com.example.util.QrCodeUtil
 
 @Composable
 fun ConfigCard(
     item: ConfigItem,
-    onCopy: (ConfigItem) -> Unit,
+    onCopy: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var showQrDialog by remember { mutableStateOf(false) }
+    var showWarningDialog by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
             .testTag("config_card_${item.id}"),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            containerColor = if (item.isMalformed)
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+            else
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         ),
-        shape = RoundedCornerShape(16.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
-                .clickable { expanded = !expanded }
-                .padding(14.dp)
+                .fillMaxWidth()
+                .padding(12.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Flag badge
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 2.dp,
-                    modifier = Modifier.size(42.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = item.countryFlag,
-                            fontSize = 22.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // Title and badges
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = item.nameTag,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            textDirection = TextDirection.ContentOrLtr
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        // Protocol Badge
-                        ProtocolBadge(protocol = item.protocol)
-
-                        // Source Type Badge
-                        SourceTypeBadge(sourceType = item.sourceType)
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Single Copy Button
-                IconButton(
-                    onClick = { onCopy(item) },
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .size(38.dp)
-                        .testTag("copy_button_${item.id}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "Copy config",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                // Expand icon
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = "Expand",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .padding(start = 4.dp)
-                        .size(20.dp)
+                // Flag and Name Tag
+                Text(
+                    text = item.countryFlag,
+                    fontSize = 20.sp,
+                    modifier = Modifier.padding(end = 8.dp)
                 )
+
+                Text(
+                    text = item.nameTag,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Warning badge if malformed
+                if (item.isMalformed) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.error,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .clickable { showWarningDialog = true }
+                            .testTag("warning_icon_${item.id}")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Config Warning",
+                                tint = MaterialTheme.colorScheme.onError,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Malformed",
+                                color = MaterialTheme.colorScheme.onError,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+
+                // Protocol Badge
+                ProtocolBadge(protocol = item.protocol)
             }
 
-            // Expanded view displaying raw config string preview
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.surface,
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        .padding(10.dp)
-                ) {
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Raw config preview
+            Text(
+                text = item.rawConfig,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                fontSize = 11.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                        RoundedCornerShape(6.dp)
+                    )
+                    .padding(8.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Source badge
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (item.sourceType == SourceType.TELEGRAM) Icons.Default.Send else Icons.Default.Code,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Raw Config String:",
+                        text = item.sourceType.displayName,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
+                        color = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = item.rawConfig,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 6,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // QR Code Button
+                    IconButton(
+                        onClick = { showQrDialog = true },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("qr_button_${item.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.QrCode2,
+                            contentDescription = "Show QR Code",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // Copy Button
+                    IconButton(
+                        onClick = onCopy,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("copy_button_${item.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy Config",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
+    }
+
+    // QR Code Dialog
+    if (showQrDialog) {
+        val qrBitmap = remember(item.rawConfig) {
+            QrCodeUtil.generateQrCodeBitmap(item.rawConfig, 512)
+        }
+
+        AlertDialog(
+            onDismissRequest = { showQrDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(item.countryFlag, fontSize = 22.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = item.nameTag.ifBlank { item.protocol.displayName },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (qrBitmap != null) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color.White,
+                            shadowElevation = 4.dp,
+                            modifier = Modifier.padding(8.dp)
+                        ) {
+                            Image(
+                                bitmap = qrBitmap,
+                                contentDescription = "Config QR Code",
+                                modifier = Modifier
+                                    .size(240.dp)
+                                    .padding(12.dp)
+                                    .testTag("qr_code_image_${item.id}")
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "Failed to generate QR code",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Scan with v2rayNG, Hiddify, NekoBox, or any client app on another device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onCopy()
+                    showQrDialog = false
+                }) {
+                    Text("Copy Config")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showQrDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    // Warning Info Dialog
+    if (showWarningDialog) {
+        AlertDialog(
+            onDismissRequest = { showWarningDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Config Format Warning", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = item.warningReason ?: "This config string appears malformed or lacks standard protocol headers.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "It might fail when imported into client apps. You can still copy or view its QR code, but verify server host details.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showWarningDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }
 
 @Composable
 fun ProtocolBadge(protocol: ProtocolType) {
-    val (bgColor, fgColor) = when (protocol) {
-        ProtocolType.VMESS -> Color(0xFF0284C7) to Color.White
-        ProtocolType.VLESS -> Color(0xFF0D9488) to Color.White
-        ProtocolType.TROJAN -> Color(0xFFD97706) to Color.White
-        ProtocolType.SHADOWSOCKS -> Color(0xFF4F46E5) to Color.White
-        ProtocolType.SHADOWSOCKSR -> Color(0xFF7C3AED) to Color.White
-        ProtocolType.HYSTERIA2 -> Color(0xFFE11D48) to Color.White
-        ProtocolType.TUIC -> Color(0xFF059669) to Color.White
-        ProtocolType.OTHER -> Color(0xFF6B7280) to Color.White
+    val (bgColor, textColor) = when (protocol) {
+        ProtocolType.VMESS -> Pair(Color(0xFF1E88E5), Color.White)
+        ProtocolType.VLESS -> Pair(Color(0xFF43A047), Color.White)
+        ProtocolType.TROJAN -> Pair(Color(0xFFE53935), Color.White)
+        ProtocolType.SHADOWSOCKS -> Pair(Color(0xFF8E24AA), Color.White)
+        ProtocolType.SHADOWSOCKSR -> Pair(Color(0xFFD81B60), Color.White)
+        ProtocolType.HYSTERIA2 -> Pair(Color(0xFFFB8C00), Color.White)
+        ProtocolType.TUIC -> Pair(Color(0xFF00ACC1), Color.White)
+        ProtocolType.OTHER -> Pair(Color(0xFF757575), Color.White)
     }
 
     Surface(
@@ -204,41 +347,10 @@ fun ProtocolBadge(protocol: ProtocolType) {
     ) {
         Text(
             text = protocol.displayName,
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-            color = fgColor,
+            color = textColor,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
         )
-    }
-}
-
-@Composable
-fun SourceTypeBadge(sourceType: SourceType) {
-    val (icon, label, color) = when (sourceType) {
-        SourceType.GITHUB -> Triple(Icons.Default.Code, "GitHub", Color(0xFF334155))
-        SourceType.TELEGRAM -> Triple(Icons.Default.Send, "Telegram", Color(0xFF0284C7))
-    }
-
-    Surface(
-        color = color.copy(alpha = 0.15f),
-        shape = RoundedCornerShape(6.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(10.dp)
-            )
-            Spacer(modifier = Modifier.width(3.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = color,
-                fontSize = 10.sp
-            )
-        }
     }
 }
