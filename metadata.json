@@ -1,0 +1,6 @@
+{
+  "name": "Config Fetcher",
+  "description": "Fetch, merge, deduplicate, filter, and share free V2Ray/Xray configs from raw GitHub subscription links and public Telegram channel web previews.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
