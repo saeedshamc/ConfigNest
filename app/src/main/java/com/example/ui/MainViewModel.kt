@@ -74,7 +74,7 @@ class MainViewModel(
 
     private fun getLatencyRank(lat: Long?): Int {
         return when {
-            lat != null && lat > 0L -> 1  // Valid ping -> Top group
+            lat != null && lat >= 0L -> 1  // Valid ping -> Top group
             lat != null && lat == -2L -> 2 // Currently testing...
             lat == null -> 3              // Not tested yet
             else -> 4                     // Failed / Timeout (-1)
@@ -316,7 +316,7 @@ class MainViewModel(
             val beforeCount = _allConfigs.value.size
             val remaining = _allConfigs.value.filter { item ->
                 val lat = latencies[item.id]
-                lat == null || lat == -2L || lat > 0L
+                lat == null || lat == -2L || lat >= 0L
             }
             val removedCount = beforeCount - remaining.size
             if (removedCount > 0) {
