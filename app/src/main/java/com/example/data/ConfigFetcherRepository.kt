@@ -119,33 +119,10 @@ class ConfigFetcherRepository {
     }
 
     private fun fetchSingleSource(source: ConfigSource): List<String>? {
-        android.util.Log.d("ConfigFetcher", "Starting fetch for source '${source.name}' from ${source.url}")
-        return try {
-            val request = Request.Builder()
-                .url(source.url)
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    android.util.Log.w("ConfigFetcher", "HTTP ${response.code} ${response.message} for source '${source.name}' (${source.url})")
-                    return null
-                }
-                val bodyText = readResponseBodySafely(response, source.name)
-                if (bodyText.isNullOrBlank()) {
-                    android.util.Log.w("ConfigFetcher", "Received empty response body for source '${source.name}' (${source.url})")
-                    return null
-                }
-
-                val configs = when (source.type) {
-                    SourceType.TELEGRAM -> parseTelegramHtml(bodyText, source)
-                    SourceType.GITHUB -> parseGitHubText(bodyText, source)
-                }
-
-                android.util.Log.i("ConfigFetcher", "Successfully extracted ${configs.size} configs from '${source.name}' (${source.url})")
-                configs
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("ConfigFetcher", "Failed fetching source '${source.name}' (${source.url}): ${e.javaClass.simpleName} - ${e.message}", e)
+        val result = NetworkManager.fetchSource(source)
+        return if (result.isSuccess) {
+            result.configs
+        } else {
             null
         }
     }

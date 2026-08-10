@@ -1,10 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
-    android:width="108dp"
-    android:height="108dp"
+    android:width="512dp"
+    android:height="512dp"
     android:viewportWidth="512"
     android:viewportHeight="512">
+
+    <!-- Background squircle -->
+    <path android:pathData="M118,0 L394,0 A118,118 0 0,1 512,118 L512,394 A118,118 0 0,1 394,512 L118,512 A118,118 0 0,1 0,394 L0,118 A118,118 0 0,1 118,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="512"
+                android:endY="512"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF4F46E5" />
+                <item android:offset="0.55" android:color="#FF4338CA" />
+                <item android:offset="1.0" android:color="#FF0891B2" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Sheen overlay -->
+    <path android:pathData="M118,0 L394,0 A118,118 0 0,1 512,118 L512,394 A118,118 0 0,1 394,512 L118,512 A118,118 0 0,1 0,394 L0,118 A118,118 0 0,1 118,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="512"
+                android:endY="380"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#29FFFFFF" />
+                <item android:offset="0.45" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
 
     <!-- Soft glow behind hub -->
     <path android:pathData="M166,268a90,90 0 1,0 180,0a90,90 0 1,0 -180,0">
