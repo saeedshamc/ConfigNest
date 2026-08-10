@@ -633,6 +633,22 @@ fun MainScreen(
                                 onPing = { viewModel.pingSingleConfig(item) }
                             )
                         }
+
+                        if (filteredConfigs.size < rawSortedFilteredConfigs.size) {
+                            item {
+                                OutlinedButton(
+                                    onClick = { viewModel.loadMoreConfigs() },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp)
+                                        .testTag("load_more_button")
+                                ) {
+                                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Load More (${rawSortedFilteredConfigs.size - filteredConfigs.size} remaining)")
+                                }
+                            }
+                        }
                     }
                 }
             }

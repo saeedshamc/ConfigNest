@@ -299,6 +299,15 @@ class MainViewModel(
         }
     }
 
+    fun loadMoreConfigs() {
+        viewModelScope.launch {
+            val current = batchLimit.value ?: 100
+            val next = current + 100
+            sourceRepository.saveBatchLimit(next)
+            _snackbarEvent.emit("Showing top $next configs")
+        }
+    }
+
     fun clearAllConfigs() {
         viewModelScope.launch {
             _allConfigs.value = emptyList()
