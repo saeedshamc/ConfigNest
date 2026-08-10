@@ -80,6 +80,9 @@ class MainViewModel(
                 if (_allConfigs.value.isEmpty()) {
                     _allConfigs.value = cachedList
                     _lastUpdated.value = time
+                    if (cachedList.isEmpty()) {
+                        refreshConfigs()
+                    }
                 }
             }
         }
@@ -91,7 +94,7 @@ class MainViewModel(
             isFetching.value = true
             fetchStatusMessage.value = "Fetching live configs in parallel..."
 
-            val currentSources = sources.value
+            val currentSources = sources.value.ifEmpty { com.example.data.DefaultSources.LIST }
             val result = fetcherRepository.fetchAllSources(currentSources)
 
             _allConfigs.value = result.configs

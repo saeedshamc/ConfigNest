@@ -25,15 +25,16 @@ class ConfigFetcherRepository {
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(8, TimeUnit.SECONDS)
-            .writeTimeout(8, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                    .header("Accept", "*/*")
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5")
+                    .header("Accept-Language", "en-US,en;q=0.9")
                     .build()
                 chain.proceed(request)
             }
@@ -120,7 +121,10 @@ class ConfigFetcherRepository {
                 .build()
 
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
+                if (!response.isSuccessful) {
+                    android.util.Log.w("ConfigFetcher", "HTTP ${response.code} for source ${source.name} (${source.url})")
+                    return null
+                }
                 val bodyText = response.body?.string() ?: return null
 
                 when (source.type) {
@@ -128,7 +132,8 @@ class ConfigFetcherRepository {
                     SourceType.GITHUB -> parseGitHubText(bodyText)
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.e("ConfigFetcher", "Failed fetching ${source.name} (${source.url}): ${e.message}", e)
             null
         }
     }
@@ -148,7 +153,10 @@ class ConfigFetcherRepository {
     }
 
     private fun parseTelegramHtml(htmlText: String): List<String> {
-        val unescaped = unescapeHtml(htmlText)
+        val cleanText = htmlText
+            .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+            .replace(Regex("</?(p|div|span|code|pre)[^>]*>", RegexOption.IGNORE_CASE), "\n")
+        val unescaped = unescapeHtml(cleanText)
         return extractConfigsFromText(unescaped)
     }
 
