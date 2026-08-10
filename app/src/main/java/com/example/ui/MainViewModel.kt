@@ -45,6 +45,9 @@ class MainViewModel(
     val autoRemoveDeadConfigs: StateFlow<Boolean> = sourceRepository.autoRemoveDeadFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val bgSyncEnabled: StateFlow<Boolean> = sourceRepository.bgSyncEnabledFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     val batchLimit: StateFlow<Int?> = sourceRepository.batchLimitFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 100)
 
@@ -239,6 +242,54 @@ class MainViewModel(
         viewModelScope.launch {
             sourceRepository.saveAutoRemoveDead(enabled)
             _snackbarEvent.emit(if (enabled) "Auto-remove dead configs enabled" else "Auto-remove dead configs disabled")
+        }
+    }
+
+    fun updateBgSyncEnabled(enabled: Boolean, context: android.content.Context) {
+        viewModelScope.launch {
+            sourceRepository.saveBgSyncEnabled(enabled)
+            if (enabled) {
+                com.example.worker.ConfigRefreshWorker.schedule(context)
+                _snackbarEvent.emit("Background periodic refresh scheduled (every 6 hrs).")
+            } else {
+                com.example.worker.ConfigRefreshWorker.cancel(context)
+                _snackbarEvent.emit("Background periodic refresh disabled.")
+            }
+        }
+    }
+
+    fun importFromClipboard(clipboardText: String) {
+        if (clipboardText.isBlank()) {
+            viewModelScope.launch {
+                _snackbarEvent.emit("Clipboard is empty.")
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            val importedItems = fetcherRepository.parseConfigsFromClipboardText(clipboardText)
+            if (importedItems.isEmpty()) {
+                _snackbarEvent.emit("No valid V2Ray/Xray links found in clipboard.")
+                return@launch
+            }
+
+            val currentList = _allConfigs.value
+            val currentSet = currentList.map { it.rawConfig.trim() }.toSet()
+
+            val newlyAdded = importedItems.filterNot { currentSet.contains(it.rawConfig.trim()) }
+            if (newlyAdded.isEmpty()) {
+                _snackbarEvent.emit("All ${importedItems.size} config(s) from clipboard are already saved.")
+                return@launch
+            }
+
+            val merged = currentList + newlyAdded
+            _allConfigs.value = merged
+            val now = System.currentTimeMillis()
+            _lastUpdated.value = now
+            sourceRepository.saveCachedConfigs(merged, now)
+
+            val msg = "Successfully imported ${newlyAdded.size} new config(s) from clipboard!"
+            _snackbarEvent.emit(msg)
         }
     }
 

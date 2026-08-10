@@ -121,6 +121,34 @@ class ConfigFetcherRepository {
         )
     }
 
+    fun parseConfigsFromClipboardText(text: String, sourceName: String = "Clipboard Import"): List<ConfigItem> {
+        val directExtracted = extractConfigsFromText(text)
+        val decodedExtracted = if (directExtracted.isEmpty()) {
+            tryBase64Decode(text)?.let { extractConfigsFromText(it) } ?: emptyList()
+        } else {
+            emptyList()
+        }
+
+        val allRaw = (directExtracted + decodedExtracted).distinct()
+        return allRaw.map { rawConfig ->
+            val protocol = ProtocolType.fromConfigString(rawConfig)
+            val (flag, tag) = FlagUtil.extractFlagAndTag(rawConfig)
+            val (isMalformed, warningReason) = ConfigItem.validate(rawConfig, protocol)
+
+            ConfigItem(
+                id = rawConfig.hashCode().toString(),
+                rawConfig = rawConfig,
+                protocol = protocol,
+                nameTag = tag,
+                countryFlag = flag,
+                sourceUrl = sourceName,
+                sourceType = SourceType.GITHUB,
+                isMalformed = isMalformed,
+                warningReason = warningReason
+            )
+        }
+    }
+
     private fun fetchSingleSource(
         source: ConfigSource,
         proxySettings: com.example.model.ProxySettings? = null

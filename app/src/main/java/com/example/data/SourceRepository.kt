@@ -36,6 +36,7 @@ class SourceRepository(private val context: Context) {
 
     private val AUTO_REMOVE_DEAD_KEY = androidx.datastore.preferences.core.booleanPreferencesKey("auto_remove_dead")
     private val BATCH_LIMIT_KEY = androidx.datastore.preferences.core.intPreferencesKey("batch_limit")
+    private val BG_SYNC_ENABLED_KEY = androidx.datastore.preferences.core.booleanPreferencesKey("bg_sync_enabled")
 
     private val configDao = com.example.data.db.AppDatabase.getDatabase(context).configDao()
 
@@ -50,6 +51,10 @@ class SourceRepository(private val context: Context) {
 
     val autoRemoveDeadFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[AUTO_REMOVE_DEAD_KEY] ?: false
+    }
+
+    val bgSyncEnabledFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[BG_SYNC_ENABLED_KEY] ?: true
     }
 
     val batchLimitFlow: Flow<Int?> = context.dataStore.data.map { prefs ->
@@ -69,6 +74,12 @@ class SourceRepository(private val context: Context) {
     suspend fun saveAutoRemoveDead(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[AUTO_REMOVE_DEAD_KEY] = enabled
+        }
+    }
+
+    suspend fun saveBgSyncEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[BG_SYNC_ENABLED_KEY] = enabled
         }
     }
 

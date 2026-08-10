@@ -113,7 +113,10 @@ fun MainScreen(
     val rawSortedFilteredConfigs by viewModel.rawSortedFilteredConfigs.collectAsState()
     val proxySettings by viewModel.proxySettings.collectAsState()
     val autoRemoveDeadConfigs by viewModel.autoRemoveDeadConfigs.collectAsState()
+    val bgSyncEnabled by viewModel.bgSyncEnabled.collectAsState()
     val batchLimit by viewModel.batchLimit.collectAsState()
+
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
 
     var showMenu by remember { mutableStateOf(false) }
     var showProxyDialog by remember { mutableStateOf(false) }
@@ -291,6 +294,17 @@ fun MainScreen(
                                     exportLauncher.launch(fileName)
                                 },
                                 leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("Import from Clipboard") },
+                                onClick = {
+                                    showMenu = false
+                                    val clipText = clipboardManager.getText()?.text ?: ""
+                                    viewModel.importFromClipboard(clipText)
+                                },
+                                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                                modifier = androidx.compose.ui.Modifier.testTag("import_from_clipboard_menu_item")
                             )
 
                             DropdownMenuItem(
@@ -632,6 +646,7 @@ fun MainScreen(
         var proxyHost by remember { mutableStateOf(proxySettings.host) }
         var proxyPortStr by remember { mutableStateOf(proxySettings.port.toString()) }
         var autoRemoveDead by remember { mutableStateOf(autoRemoveDeadConfigs) }
+        var bgSync by remember { mutableStateOf(bgSyncEnabled) }
 
         AlertDialog(
             onDismissRequest = { showProxyDialog = false },
@@ -647,6 +662,21 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(vertical = 4.dp)
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Background Periodic Refresh", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Automatically fetch new configs in background every 6 hours", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = bgSync,
+                            onCheckedChange = { bgSync = it }
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -736,6 +766,7 @@ fun MainScreen(
                         )
                     )
                     viewModel.updateAutoRemoveDead(autoRemoveDead)
+                    viewModel.updateBgSyncEnabled(bgSync, context)
                     showProxyDialog = false
                 }) {
                     Text("Save Settings")

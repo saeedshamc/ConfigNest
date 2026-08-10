@@ -40,6 +40,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Schedule periodic background refresh worker
+        com.example.worker.ConfigRefreshWorker.schedule(applicationContext)
+
         setContent {
             val themeMode by viewModel.themeMode.collectAsState()
 
