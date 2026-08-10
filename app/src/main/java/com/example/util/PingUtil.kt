@@ -75,30 +75,59 @@ object PingUtil {
 
     private fun parseUriBased(raw: String): ServerTarget? {
         val cleanUrl = raw.substringBefore("#").trim()
-        val withoutScheme = cleanUrl.substringAfter("://").trim()
-        val authority = withoutScheme.substringBefore("?").substringBefore("/").trim()
-        val hostPortPart = if (authority.contains("@")) authority.substringAfter("@") else authority
-        if (hostPortPart.isNotBlank()) {
-            val host: String
-            val port: Int
-            if (hostPortPart.startsWith("[")) {
-                host = hostPortPart.substringBefore("]").substringAfter("[").trim()
-                val afterBracket = hostPortPart.substringAfter("]", "")
-                val portStr = if (afterBracket.startsWith(":")) afterBracket.substringAfter(":") else ""
-                port = portStr.toIntOrNull() ?: 443
-            } else if (hostPortPart.contains(":")) {
-                host = hostPortPart.substringBefore(":").trim()
-                port = hostPortPart.substringAfter(":").trim().toIntOrNull() ?: 443
+        return try {
+            val uri = Uri.parse(cleanUrl)
+            val host = uri.host?.trim()?.trim('[', ']')
+            
+            val rawPort = try {
+                val p = uri.port
+                if (p in 1..65535) p else null
+            } catch (_: Exception) {
+                null
+            }
+
+            val port = rawPort ?: run {
+                val authority = uri.encodedAuthority ?: uri.authority ?: ""
+                val hostPort = if (authority.contains("@")) authority.substringAfter("@") else authority
+                if (hostPort.contains(":")) {
+                    val portPart = hostPort.substringAfter(":").substringBefore("?").substringBefore("/").trim()
+                    portPart.toIntOrNull()?.takeIf { it in 1..65535 }
+                } else null
+            } ?: 443
+
+            if (!host.isNullOrBlank()) {
+                ServerTarget(host, port)
             } else {
-                host = hostPortPart.trim()
-                port = 443
+                val withoutScheme = cleanUrl.substringAfter("://").trim()
+                val authority = withoutScheme.substringBefore("?").substringBefore("/").trim()
+                val hostPortPart = if (authority.contains("@")) authority.substringAfter("@") else authority
+                if (hostPortPart.isNotBlank()) {
+                    val fallbackHost: String
+                    val fallbackPort: Int
+                    if (hostPortPart.startsWith("[")) {
+                        fallbackHost = hostPortPart.substringBefore("]").substringAfter("[").trim()
+                        val afterBracket = hostPortPart.substringAfter("]", "")
+                        val portStr = if (afterBracket.startsWith(":")) afterBracket.substringAfter(":") else ""
+                        fallbackPort = portStr.toIntOrNull()?.takeIf { it in 1..65535 } ?: 443
+                    } else if (hostPortPart.contains(":")) {
+                        fallbackHost = hostPortPart.substringBefore(":").trim()
+                        fallbackPort = hostPortPart.substringAfter(":").trim().toIntOrNull()?.takeIf { it in 1..65535 } ?: 443
+                    } else {
+                        fallbackHost = hostPortPart.trim()
+                        fallbackPort = 443
+                    }
+                    if (fallbackHost.isNotBlank()) {
+                        ServerTarget(fallbackHost, fallbackPort)
+                    } else {
+                        parseGenericFallback(raw)
+                    }
+                } else {
+                    parseGenericFallback(raw)
+                }
             }
-            if (host.isNotBlank()) {
-                val validPort = if (port in 1..65535) port else 443
-                return ServerTarget(host, validPort)
-            }
+        } catch (_: Exception) {
+            parseGenericFallback(raw)
         }
-        return parseGenericFallback(raw)
     }
 
     private fun parseShadowsocks(raw: String): ServerTarget? {
